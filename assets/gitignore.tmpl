@@ -1,0 +1,70 @@
+# STACK: generic .gitignore template.
+# Copy to .gitignore and add project-local paths. Keep progress/history.md
+# tracked; keep live session state and secrets out.
+
+# Dependencies
+node_modules/
+.pnpm-store/
+.yarn/
+vendor/
+
+# Build output
+dist/
+build/
+out/
+target/
+bin/
+obj/
+
+# Framework and test caches
+.next/
+.nuxt/
+.svelte-kit/
+.output/
+.angular/
+.turbo/
+.nx/
+.cache/
+.parcel-cache/
+.vite/
+coverage/
+.nyc_output/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.tox/
+site/
+
+# Go / Rust
+*.test
+*.out
+
+# Logs and local noise
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Session state (local only)
+/activities.json
+/progress/current.md
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+service-account*.json
+
+# Project-local state (add your own)
+# .tuneles/
+# .data/
+# uploads/

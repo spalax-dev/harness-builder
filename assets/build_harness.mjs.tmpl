@@ -1,0 +1,73 @@
+#!/usr/bin/env node
+/**
+ * build_harness.mjs — create the local session/tracking files.
+ *
+ * STACK: generic. Copy to `scripts/build_harness.mjs`.
+ * Creates, only if missing:
+ *   - activities.json
+ *   - progress/current.md
+ *   - progress/history.md
+ *   - progress/explore/
+ *
+ * Run with: node scripts/build_harness.mjs [project_name] [description]
+ */
+
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const project = process.argv[2] ?? basename(ROOT);
+const description = process.argv[3] ?? 'Project description';
+
+const CURRENT_MD = `# Current Session
+
+## Activity
+
+- ID:
+- Name:
+- Type:
+- Status:
+
+## Tasks
+
+- Current:
+- Pending:
+
+## Plan
+
+## Notes
+
+## Blockers
+
+---
+`;
+
+const HISTORY_MD = `# Session History
+
+> Append-only log of completed sessions/activities.
+> Keep the durable summary here; \`current.md\` is local session state.
+
+---
+`;
+
+function ensure(path, content) {
+  const relativePath = relative(ROOT, path);
+  if (existsSync(path)) {
+    console.log(`exists  ${relativePath}`);
+    return;
+  }
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, content, 'utf-8');
+  console.log(`created ${relativePath}`);
+}
+
+console.log(`Initializing ${project} tracking structure`);
+ensure(
+  join(ROOT, 'activities.json'),
+  JSON.stringify({ project, description, activities: [] }, null, 2) + '\n',
+);
+ensure(join(ROOT, 'progress', 'current.md'), CURRENT_MD);
+ensure(join(ROOT, 'progress', 'history.md'), HISTORY_MD);
+ensure(join(ROOT, 'progress', 'explore', '.gitkeep'), '');
+console.log('Tracking structure ready.');

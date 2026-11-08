@@ -1,0 +1,75 @@
+<!--
+  architecture.md.tmpl → docs/harness/architecture.md
+
+  Replace: {{PROJECT_NAME}}, {{STACK}}, {{SOURCE_DIR}}, {{LAYOUT_TREE}},
+  {{LAYERS_TABLE}}, {{QUALITY_GATES}}.
+  Keep the "quality gates" section aligned with scripts/harness.mjs.
+-->
+
+# Architecture
+
+> What "good work" means in this project.
+
+---
+
+## 1. Project overview
+
+{{PROJECT_NAME}} is built with **{{STACK}}**. Describe the product in one
+paragraph: what it does, who consumes it, and what is explicitly out of scope.
+
+Design goals:
+
+- **Deterministic** — same input, same output.
+- **Observable** — failures are visible and actionable.
+- **Small surface** — new modules are added only when this document describes
+  their home.
+- **Safe** — no secrets in source, no unsafe defaults, no hidden I/O.
+
+---
+
+## 2. Layout
+
+```text
+{{LAYOUT_TREE}}
+```
+
+Rules:
+
+- One folder per feature/module; kebab-case names.
+- Every source file has a documented home; a new folder requires a docs update
+  first.
+- Tests live next to the code they protect (or in the project's documented
+  test tree).
+- Generated output never lives in source directories.
+
+---
+
+## 3. Layers
+
+| Layer            | Contents | May import from |
+| ---------------- | -------- | --------------- |
+| {{LAYERS_TABLE}} |
+
+Dependencies flow top-down. No cycles. I/O belongs at the boundary layer, not
+inside pure logic.
+
+---
+
+## 4. State and data
+
+- Server state lives behind the service/client layer.
+- Component/UI state is derived from the smallest possible source.
+- No global mutable singletons outside the project's dependency-injection
+  mechanism.
+- Persisted data has an explicit schema and a migration policy.
+
+---
+
+## 5. Quality gates
+
+{{QUALITY_GATES}}
+
+The harness derives a **level** from the task type. Light runs changed
+format/lint plus structure/docs; medium adds the affected type check and
+targeted specs; full runs every gate above. `docs/harness/verification.md` is
+the source of truth for the matrix; `AGENTS.md` has the short version.

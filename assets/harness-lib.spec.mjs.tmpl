@@ -1,0 +1,179 @@
+/**
+ * harness-lib.spec.mjs — tests for the pure harness logic.
+ *
+ * STACK: generic. Copy to `scripts/harness-lib.spec.mjs`.
+ * Run with: node --test scripts/harness-lib.spec.mjs
+ * Kept dependency-free so the harness can test itself before a project has
+ * test tooling installed.
+ */
+
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  activityLevel,
+  classifyChangedFiles,
+  describeMode,
+  effectiveTaskType,
+  modeForLevel,
+  needsReviewer,
+  parseTaskRef,
+  verificationLevel,
+} from "./harness-lib.mjs";
+
+const DEFAULT_LEVELS = {
+  feat: "full",
+  fix: "medium",
+  refactor: "full",
+  perf: "medium",
+  test: "medium",
+  chore: "light",
+  docs: "light",
+  style: "light",
+  ci: "light",
+  build: "light",
+};
+
+for (const [type, level] of Object.entries(DEFAULT_LEVELS)) {
+  test(`${type} -> ${level}`, () => {
+    assert.equal(verificationLevel({ type }, { type: "chore" }), level);
+  });
+}
+
+test("breaking forces full regardless of the task type", () => {
+  for (const type of ["fix", "perf", "chore", "docs"]) {
+    assert.equal(verificationLevel({ type, breaking: true }, {}), "full");
+  }
+});
+
+test("explicit verification override wins over type and breaking", () => {
+  assert.equal(
+    verificationLevel({ type: "feat", verification: "light" }, {}),
+    "light",
+  );
+  assert.equal(
+    verificationLevel(
+      { type: "docs", breaking: true, verification: "medium" },
+      {},
+    ),
+    "medium",
+  );
+  assert.equal(
+    verificationLevel({ type: "feat", verification: "none" }, {}),
+    "none",
+  );
+});
+
+test("fallback is task.type ?? activity.type ?? medium", () => {
+  assert.equal(verificationLevel({}, { type: "fix" }), "medium");
+  assert.equal(verificationLevel({}, { type: "chore" }), "light");
+  assert.equal(verificationLevel({}, {}), "medium");
+  assert.equal(verificationLevel(null, null), "medium");
+  assert.equal(effectiveTaskType({}, { type: "feat" }), "feat");
+  assert.equal(effectiveTaskType({}, {}), null);
+});
+
+test("activityLevel is the maximum, including the single-task case", () => {
+  assert.equal(activityLevel({ tasks: [{ type: "feat" }] }), "full");
+  assert.equal(activityLevel({ tasks: [{ type: "docs" }] }), "light");
+  assert.equal(
+    activityLevel({ tasks: [{ type: "docs" }, { type: "chore" }] }),
+    "light",
+  );
+  assert.equal(
+    activityLevel({ tasks: [{ type: "docs" }, { type: "fix" }] }),
+    "medium",
+  );
+  assert.equal(
+    activityLevel({ tasks: [{ type: "fix" }, { type: "feat" }] }),
+    "full",
+  );
+  assert.equal(activityLevel({ tasks: [{ verification: "none" }] }), "none");
+  assert.equal(
+    activityLevel({ tasks: [{ verification: "none" }, { type: "docs" }] }),
+    "light",
+  );
+  assert.equal(activityLevel({ tasks: [] }), "light");
+});
+
+test("parseTaskRef accepts <activity>.<task> and rejects everything else", () => {
+  assert.deepEqual(parseTaskRef("12.a"), { activityId: "12", taskId: "a" });
+  assert.deepEqual(parseTaskRef("12.a-b"), { activityId: "12", taskId: "a-b" });
+  assert.equal(parseTaskRef("12"), null);
+  assert.equal(parseTaskRef("12."), null);
+  assert.equal(parseTaskRef("abc.a"), null);
+  assert.equal(parseTaskRef("12.a.b"), null);
+  assert.equal(parseTaskRef(null), null);
+});
+
+test("needsReviewer only reports active activities with full tasks", () => {
+  assert.equal(
+    needsReviewer({ status: "pending", tasks: [{ type: "feat" }] }),
+    true,
+  );
+  assert.equal(
+    needsReviewer({ status: "in_progress", tasks: [{ type: "refactor" }] }),
+    true,
+  );
+  assert.equal(
+    needsReviewer({
+      status: "pending",
+      tasks: [{ type: "fix", breaking: true }],
+    }),
+    true,
+  );
+  assert.equal(
+    needsReviewer({ status: "done", tasks: [{ type: "feat" }] }),
+    false,
+  );
+  assert.equal(
+    needsReviewer({ status: "pending", tasks: [{ type: "chore" }] }),
+    false,
+  );
+  assert.equal(needsReviewer(null), false);
+});
+
+test("classifyChangedFiles uses the configured code roots", () => {
+  assert.equal(classifyChangedFiles(["docs/readme.md"]), "light");
+  assert.equal(classifyChangedFiles(["README.md", "package.json"]), "light");
+  assert.equal(classifyChangedFiles(["src/app.ts"]), "medium");
+  assert.equal(classifyChangedFiles(["scripts/harness.mjs"]), "medium");
+  assert.equal(classifyChangedFiles([]), "light");
+  assert.equal(classifyChangedFiles(["app/main.py"], ["app/"]), "medium");
+  assert.equal(classifyChangedFiles(["src/app.ts"], ["app/"]), "light");
+});
+
+test("modeForLevel maps every level to its gates", () => {
+  const full = modeForLevel("full");
+  assert.equal(full.format, "all");
+  assert.equal(full.lint, "all");
+  assert.equal(full.type, "all");
+  assert.equal(full.build, "production");
+  assert.equal(full.test, "all");
+
+  const medium = modeForLevel("medium");
+  assert.equal(medium.format, "changed");
+  assert.equal(medium.lint, "changed");
+  assert.equal(medium.type, "affected");
+  assert.equal(medium.build, "skip");
+  assert.equal(medium.test, "targeted");
+
+  const light = modeForLevel("light");
+  assert.equal(light.type, "skip");
+  assert.equal(light.test, "skip");
+
+  const none = modeForLevel("none");
+  assert.equal(none.format, "skip");
+  assert.equal(none.lint, "skip");
+  assert.equal(none.structure, "skip");
+  assert.equal(none.docs, "skip");
+
+  assert.equal(modeForLevel("unknown").level, "medium");
+});
+
+test("describeMode exposes every gate and reviewer state", () => {
+  assert.match(describeMode(modeForLevel("full")), /reviewer=yes/);
+  assert.match(describeMode(modeForLevel("medium")), /test=targeted/);
+  assert.match(describeMode(modeForLevel("light")), /type=skip/);
+  assert.match(describeMode(modeForLevel("none")), /format=skip/);
+});

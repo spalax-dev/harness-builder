@@ -1,0 +1,89 @@
+<!--
+  structure.md.tmpl → docs/harness/structure.md (or components.md for a
+  component-based UI). Replace: {{SOURCE_DIR}}, {{TREE}}, {{FILE_SET}},
+  {{TEST_LOCATION}}.
+-->
+
+# Structure
+
+> Where every file lives, what belongs in each folder, and the process for
+> adding a new one.
+
+---
+
+## 1. Tree
+
+```text
+{{TREE}}
+```
+
+`{{SOURCE_DIR}}` holds production source. `{{TEST_LOCATION}}` holds tests.
+Generated output, dependencies and caches never live in source folders.
+
+---
+
+## 2. What lives where
+
+| Folder                      | Holds                                   | Does not hold      |
+| --------------------------- | --------------------------------------- | ------------------ |
+| `{{SOURCE_DIR}}/<feature>/` | feature code + its test                 | shared utilities   |
+| `{{SOURCE_DIR}}/shared/`    | reusable, presentation-only code        | I/O, feature state |
+| `{{SOURCE_DIR}}/core/`      | services/clients, the only I/O boundary | UI code            |
+| `{{SOURCE_DIR}}/models/`    | pure types/interfaces                   | runtime behavior   |
+| `scripts/`                  | harness and tooling                     | shipped code       |
+| `docs/`                     | product and harness docs                | generated output   |
+
+---
+
+## 3. File set
+
+{{FILE_SET}}
+
+A feature folder is self-contained: its source, test and optional styles live
+together. A shared unit has exactly the files the project documents — no
+orphans, no extra variants.
+
+---
+
+## 4. Dependency direction
+
+```text
+feature → shared/core → models/platform
+```
+
+- Shared code never imports a feature.
+- Models import nothing from the UI or I/O layers.
+- No cycles.
+- Cross-package imports are forbidden unless the package exports them.
+
+---
+
+## 5. Adding a new file or folder
+
+1. **Docs** — update `architecture.md` and this file first.
+2. **Test** — add the spec/contract test.
+3. **Implement** — create the file in its documented home.
+4. **Verify** — run the task level; structure and tests must pass.
+
+If the file does not fit an existing folder, the architecture is wrong, not the
+folder.
+
+---
+
+## 6. Definition of done
+
+- [ ] The file lives in its documented home.
+- [ ] The sibling spec exists and asserts behavior.
+- [ ] No forbidden pattern or naming violation.
+- [ ] The task level is green.
+- [ ] The docs that describe the tree are still true.
+
+---
+
+## 7. Anti-patterns
+
+- A new top-level folder invented mid-task.
+- A shared component that calls a service.
+- A model that imports a framework.
+- A test in a separate tree when the project uses colocated specs.
+- A generated file committed into source.

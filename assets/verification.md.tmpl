@@ -1,0 +1,203 @@
+# Verification
+
+> How this project decides that work is correct.
+
+<!--
+  Replace the example commands below with the commands detected for this
+  project. The harness config is the executable source of truth; this document
+  explains the policy. Keep the gate names aligned with
+  `scripts/harness.mjs` CONFIG.
+
+  Placeholders: {{STACK}}, {{PACKAGE_MANAGER}}, {{FORMAT_CMD}}, {{LINT_CMD}},
+  {{TYPE_CMD}}, {{BUILD_CMD}}, {{TEST_CMD}}, {{TARGET_TEST_CMD}},
+  {{CONTRACT_CMD}}, {{DOC_PATHS}}, {{CODE_ROOTS}}, {{TEST_ROOTS}},
+  {{IGNORE_DIRS}}.
+-->
+
+---
+
+## 0. Development workflow check
+
+Before code exists, verify the pipeline:
+
+1. **Docs exist** — architecture, behaviour and edge cases are written.
+2. **Tests exist** — the new unit has a spec or an explicit contract test.
+3. **Tests fail** — the test is red before the implementation exists.
+4. **Then implement** — the test turns green.
+5. **Then verify** — run the task level, not the maximum level.
+
+If code exists without docs or tests, the task is **not done**.
+
+---
+
+## 1. Before declaring a task `done`
+
+1. Read the task `type` and optional `breaking` in `activities.json`.
+2. Run `node scripts/harness.mjs --for-task <activity>.<task>`.
+3. If unsure of the level, run `--explain` first.
+4. Do not run the full gate for a light/medium task without a reason.
+5. At activity close, run the activity level once. If it is full, invoke the
+   reviewer.
+
+A one-task activity has no separate close step: its task level is the activity
+level. A multi-task activity runs each task's level during iteration and the
+maximum level once at close.
+
+---
+
+## 2. Gates
+
+The harness (`scripts/harness.mjs`) runs the configured subset:
+
+| Gate        | What it proves                               | Example (Node/npm)                         |
+| ----------- | -------------------------------------------- | ------------------------------------------ |
+| `format`    | Formatting is stable                         | `npm run format:check`                     |
+| `lint`      | Static quality rules pass                    | `npm run lint`                             |
+| `type`      | Static types/contract compile                | `npm run typecheck` / `tsc --noEmit`       |
+| `build`     | The production artifact exists               | `npm run build`                            |
+| `test`      | Behaviour is covered                         | `npm run test`                             |
+| `contract`  | The artifact matches its public contract     | CSS tokens, exports, schema, bundle checks |
+| `structure` | The tree, naming and forbidden patterns hold | project-specific rules                     |
+| `docs`      | Required docs exist and are not placeholders | word-count check                           |
+
+A gate is removed from `CONFIG.gates` when it has no real signal. A gate is
+kept when a failure would catch a class of bug that the other gates miss.
+
+### 2.1 Format and lint
+
+- Full: whole repository.
+- Light/medium: changed files only.
+- Keep generated/vendor output in the project's ignore files first; otherwise
+  the gate scans files nobody owns.
+
+### 2.2 Type checking
+
+- Full: every configured package.
+- Medium: only the affected package, derived from changed files.
+- Light: skipped.
+- Config changes (`tsconfig`, `package.json`, build config) should widen the
+  affected set to every package.
+
+### 2.3 Build
+
+- Full: production build.
+- `--dev-build`: development build, for a faster artifact/CSS check. It does
+  not validate production budgets and is not a substitute for full.
+- Light/medium: skipped.
+
+### 2.4 Contract
+
+- Runs **after** the build, because it inspects the build artifact.
+- Examples: emitted CSS tokens, package exports, generated schema, bundle
+  entry points, public API surface.
+- If the build is skipped, the contract gate is skipped too. Never validate a
+  stale artifact.
+
+### 2.5 Tests
+
+- Full: the project's full test command(s).
+- Medium: specs sibling to changed source files. If a changed source file has
+  no sibling spec, run the package suite and warn. If the working tree is
+  clean, try `git diff --name-only HEAD~1` before falling back.
+- Light: skipped.
+- The harness's own pure logic is covered by
+  `node --test scripts/harness-lib.spec.mjs`.
+
+### 2.6 Structure
+
+Project-specific, cheap, and always run in light/medium/full:
+
+- required directories/files;
+- forbidden patterns (e.g. a framework module, inline templates, raw hex);
+- maximum code lines per file;
+- naming conventions.
+
+Do not invent rules the project has not agreed to. Put them in the project's
+architecture/components docs first, then encode them here.
+
+### 2.7 Docs
+
+- Required docs exist and carry at least the configured word count.
+- Keep this gate cheap; it is a placeholder detector, not a prose review.
+
+---
+
+## 3. Levels
+
+| Effective type                          | Level    | Gates                                                    | Reviewer               |
+| --------------------------------------- | -------- | -------------------------------------------------------- | ---------------------- |
+| `feat`, `refactor`, `breaking: true`    | **full** | all                                                      | yes, at activity close |
+| `fix`, `perf`, `test`                   | medium   | changed format/lint + affected type + targeted tests     | no                     |
+| `chore`, `docs`, `style`, `ci`, `build` | light    | changed format/lint + structure/docs + harness self-test | no                     |
+| `verification: "none"`                  | none     | every gate skipped (explicit override only)              | no                     |
+
+`task.type` is optional. The fallback is
+`task.type ?? activity.type ?? 'medium'`. Unknown types default to **medium**,
+not light: a false green is worse than a false red.
+
+---
+
+## 4. Commands
+
+| Command                                             | Behaviour                               |
+| --------------------------------------------------- | --------------------------------------- |
+| `node scripts/harness.mjs`                          | full (final gate)                       |
+| `node scripts/harness.mjs --for-task <a>.<t>`       | level of that task                      |
+| `node scripts/harness.mjs --explain <a>.<t>`        | level + gate set, no gates              |
+| `node scripts/harness.mjs --fast`                   | changed-file iteration                  |
+| `node scripts/harness.mjs --changed`                | auto light/medium from the working tree |
+| `node scripts/harness.mjs --dev-build --skip-tests` | fast artifact/CSS check                 |
+| `node --test scripts/harness-lib.spec.mjs`          | harness logic tests                     |
+
+`--for-task` wins over `--fast`/`--changed`. `--skip-format`, `--skip-lint`,
+`--skip-type`, `--skip-build`, `--skip-tests`, `--skip-contract` are escapes.
+Running full with reduced gates is not a complete full verification. There is
+no `--no-cache` until a cache exists.
+
+---
+
+## 5. Docs and tests per type
+
+| Type                 | Tests                                        | Docs                                        | New components/services          |
+| -------------------- | -------------------------------------------- | ------------------------------------------- | -------------------------------- |
+| `feat`               | new or extended spec                         | yes if public API, view or visible behavior | yes, with the project's file set |
+| `fix` (not breaking) | regression test that fails without the fix   | only if the doc was wrong                   | no                               |
+| `fix!` / `feat!`     | update affected specs                        | yes — docs described the old behavior       | update only                      |
+| `refactor`           | if a contract changed; not for a pure rename | only if comments/README became stale        | no                               |
+| `perf`               | behavior test or benchmark                   | no                                          | no                               |
+| `test`               | yes (that is the task)                       | no                                          | no                               |
+| `chore`              | no                                           | no                                          | no                               |
+| `docs`               | no                                           | yes                                         | no                               |
+| `style`              | no                                           | no                                          | no                               |
+| `ci` / `build`       | no                                           | maybe the development workflow doc          | no                               |
+
+---
+
+## 6. Pending optimizations
+
+Record them so the next agent does not rediscover them:
+
+1. **Parallelize independent full gates** — format, lint and type are
+   independent; build and tests can run concurrently. Serialize only artifact
+   dependencies (contract after build).
+2. **Targeted tests first** — a leaf spec is seconds; the full suite is tens of
+   seconds. Use `--for-task`/`--changed` during iteration.
+3. **Faster test environment** — evaluate a lighter DOM/environment or
+   `isolate: false` only after measuring.
+4. **Dev build for artifact checks** — if the contract only needs emitted CSS
+   or a bundle, a development build may suffice; keep production for full.
+5. **Result cache** — add `--no-cache` only when a content-hash cache exists.
+
+---
+
+## 7. Reviewer checklist
+
+- [ ] The task level was run and passed.
+- [ ] At activity close, the activity level was run once.
+- [ ] The full gate passes at close.
+- [ ] Tests cover the behavior, not just the happy path.
+- [ ] A non-breaking fix has a regression test that fails without it.
+- [ ] Docs match the behavior and are not placeholders.
+- [ ] No debug output, context-less TODOs or unused imports.
+- [ ] No credentials or generated artifacts committed.
+- [ ] `activities.json` and the session file agree.

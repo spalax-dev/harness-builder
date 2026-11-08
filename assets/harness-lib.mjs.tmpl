@@ -1,0 +1,180 @@
+/**
+ * harness-lib.mjs — pure decision logic for a verification harness.
+ *
+ * STACK: generic. Copy to `scripts/harness-lib.mjs`.
+ * No I/O, no child_process, no framework imports: everything here is testable
+ * with `node --test scripts/harness-lib.spec.mjs`.
+ *
+ * Derived from the canonical tuneles harness:
+ * - type -> level mapping
+ * - activity level = max(task level)
+ * - `task.type ?? activity.type ?? 'medium'` fallback
+ * - `--for-task <activity>.<task>` parser
+ * - reviewer predicate for active activities only
+ * - changed-file classification
+ */
+
+export const VALID_TASK_TYPES = [
+  "feat",
+  "fix",
+  "refactor",
+  "perf",
+  "test",
+  "chore",
+  "docs",
+  "style",
+  "ci",
+  "build",
+];
+
+export const VERIFICATION_LEVELS = ["full", "medium", "light", "none"];
+export const DEFAULT_LEVEL = "medium";
+
+/** Code roots used by `--changed`. Replace for your layout. */
+export const DEFAULT_CODE_ROOTS = ["src/", "scripts/"];
+
+/** Task type wins over the activity type; unknown falls through to DEFAULT_LEVEL. */
+export function effectiveTaskType(task, activity) {
+  return task?.type ?? activity?.type ?? null;
+}
+
+export function verificationLevel(task, activity) {
+  if (task?.verification) {
+    return task.verification;
+  }
+  if (task?.breaking) {
+    return "full";
+  }
+  switch (effectiveTaskType(task, activity)) {
+    case "feat":
+    case "refactor":
+      return "full";
+    case "fix":
+    case "perf":
+    case "test":
+      return "medium";
+    case "chore":
+    case "docs":
+    case "style":
+    case "ci":
+    case "build":
+      return "light";
+    default:
+      return DEFAULT_LEVEL;
+  }
+}
+
+/** Activity level is the maximum of its tasks (a single task needs no special case). */
+export function activityLevel(activity) {
+  const levels = (activity?.tasks ?? []).map((task) =>
+    verificationLevel(task, activity),
+  );
+  if (levels.includes("full")) {
+    return "full";
+  }
+  if (levels.includes("medium")) {
+    return "medium";
+  }
+  if (levels.includes("light")) {
+    return "light";
+  }
+  return levels.includes("none") ? "none" : "light";
+}
+
+/** `12.a` -> { activityId: '12', taskId: 'a' }; anything else -> null. */
+export function parseTaskRef(ref) {
+  if (typeof ref !== "string") {
+    return null;
+  }
+  const match = /^(\d+)\.([A-Za-z0-9_-]+)$/.exec(ref.trim());
+  return match ? { activityId: match[1], taskId: match[2] } : null;
+}
+
+/** Only active work needs a reviewer; done activities are history. */
+export function needsReviewer(activity) {
+  if (!activity || !["pending", "in_progress"].includes(activity.status)) {
+    return false;
+  }
+  return (activity.tasks ?? []).some(
+    (task) => verificationLevel(task, activity) === "full",
+  );
+}
+
+/** Code changes are medium; docs/config-only changes are light. */
+export function classifyChangedFiles(files, codeRoots = DEFAULT_CODE_ROOTS) {
+  const code = files.some((file) =>
+    codeRoots.some((root) => file.startsWith(root)),
+  );
+  return code ? "medium" : "light";
+}
+
+/** Resolve a level to the set of gates it runs. */
+export function modeForLevel(level) {
+  switch (level) {
+    case "full":
+      return {
+        level,
+        format: "all",
+        lint: "all",
+        type: "all",
+        build: "production",
+        test: "all",
+        contract: "yes",
+        structure: "yes",
+        docs: "yes",
+      };
+    case "medium":
+      return {
+        level,
+        format: "changed",
+        lint: "changed",
+        type: "affected",
+        build: "skip",
+        test: "targeted",
+        contract: "skip",
+        structure: "yes",
+        docs: "yes",
+      };
+    case "light":
+      return {
+        level,
+        format: "changed",
+        lint: "changed",
+        type: "skip",
+        build: "skip",
+        test: "skip",
+        contract: "skip",
+        structure: "yes",
+        docs: "yes",
+      };
+    case "none":
+      return {
+        level,
+        format: "skip",
+        lint: "skip",
+        type: "skip",
+        build: "skip",
+        test: "skip",
+        contract: "skip",
+        structure: "skip",
+        docs: "skip",
+      };
+    default:
+      return modeForLevel("medium");
+  }
+}
+
+/** Human-readable gate summary for `--explain`. */
+export function describeMode(mode) {
+  return [
+    `format=${mode.format}`,
+    `lint=${mode.lint}`,
+    `type=${mode.type}`,
+    `build=${mode.build}`,
+    `test=${mode.test}`,
+    `contract=${mode.contract}`,
+    `structure=${mode.structure}`,
+    `docs=${mode.docs}`,
+    `reviewer=${mode.level === "full" ? "yes" : "no"}`,
+  ].join(", ");
+}

@@ -1,0 +1,88 @@
+<!--
+  conventions.md.tmpl → docs/harness/conventions.md
+
+  Replace: {{LANGUAGE}}, {{FORMATTER}}, {{LINTER}}, {{FORMAT_CMD}},
+  {{LINT_CMD}}, {{MAX_LINE}}.
+-->
+
+# Conventions
+
+> Style rules, naming and structure. Follow exactly.
+
+---
+
+## 1. Language and style
+
+- **{{LANGUAGE}}** with the project's strictest practical settings.
+- **{{FORMATTER}}** owns formatting; **{{LINTER}}** owns quality and types.
+- No `any`/`unknown` leaks across a public API unless documented.
+- No dead code, unused imports or unused variables.
+- No `console.log`/debug leftovers.
+- No TODOs without context (owner + why + next step).
+- {{MAX_LINE}} line width unless the formatter config says otherwise.
+
+### 1.1 Format and lint: zero tolerance
+
+- Format: `{{FORMAT_CMD}}`.
+- Lint: `{{LINT_CMD}}` with zero warnings.
+- Green on both is the definition of **clean code**.
+- Never disable a rule ad-hoc. If a rule must be relaxed, change the config,
+  add a comment, and document it in this section.
+
+---
+
+## 2. Naming
+
+| Element           | Convention           | Example                 |
+| ----------------- | -------------------- | ----------------------- |
+| Source file       | kebab-case           | `reading-panel.ts`      |
+| Type/class        | PascalCase           | `ReadingPanel`          |
+| Function/variable | camelCase            | `loadLibrary()`         |
+| Constant          | UPPER_SNAKE_CASE     | `MAX_RETRIES`           |
+| Test file         | colocated `*.spec.*` | `reading-panel.spec.ts` |
+| Feature folder    | kebab-case           | `reading-panel/`        |
+
+Names state the contract. A reader should understand the purpose without
+opening the file.
+
+---
+
+## 3. Layout
+
+- Source lives in `{{SOURCE_DIR}}`; docs in `docs/`; harness in `scripts/`.
+- Tests are colocated or in the documented test tree; do not mix both.
+- Scripts are not part of the shipped artifact.
+- A new top-level folder requires an `architecture.md` update first.
+
+---
+
+## 4. Imports and dependencies
+
+- Import direction: feature → shared/core → models/platform.
+- No cycles.
+- No cross-package imports unless the package explicitly exports them.
+- Prefer the standard library and existing dependencies over new ones.
+- A new dependency needs a reason and a lockfile update.
+
+---
+
+## 5. Errors and comments
+
+- Fail fast at boundaries; return typed errors for expected failures.
+- Do not swallow errors; log with context at the boundary.
+- Comments explain **why**, not what. Delete comments that restate the code.
+- Public API gets a short doc comment with contract and edge cases.
+
+---
+
+## 6. Documentation
+
+- `docs/harness/architecture.md` — layout and layers.
+- `docs/harness/structure.md` — where each file lives.
+- `docs/harness/development.md` — workflow.
+- `docs/harness/testing.md` — test policy.
+- `docs/harness/verification.md` — gates and levels.
+- `docs/harness/CHECKPOINTS.md` — final state evaluation.
+
+Docs are part of the contract. If a change makes a doc wrong, the change is not
+done.

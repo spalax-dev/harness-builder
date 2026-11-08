@@ -1,0 +1,51 @@
+<!--
+  AGENTS.verification.md.tmpl — paste this block into AGENTS.md.
+  Replace the example commands (npm) with the package manager and commands
+  detected for this project: pnpm, yarn, bun, uv, poetry, cargo, go, make.
+  Keep the shape; delete rows the project does not need.
+
+  Placeholders: {{STACK}}, {{PACKAGE_MANAGER}}, {{FORMAT_CMD}}, {{LINT_CMD}},
+  {{TYPE_CMD}}, {{BUILD_CMD}}, {{TEST_CMD}}, {{TARGET_TEST_CMD}},
+  {{CONTRACT_CMD}}, {{DOC_PATHS}}, {{CODE_ROOTS}}, {{TEST_ROOTS}},
+  {{IGNORE_DIRS}}.
+-->
+
+## Verification by task type
+
+Classify the task **before** editing. `breaking: true` always means full.
+
+| `type`                                  | Level    | Reviewer               |
+| --------------------------------------- | -------- | ---------------------- |
+| `feat`, `refactor`                      | **full** | yes, at activity close |
+| `fix`, `perf`, `test`                   | medium   | no                     |
+| `chore`, `docs`, `style`, `ci`, `build` | light    | no                     |
+
+| Level  | Command                                     | What runs                                                |
+| ------ | ------------------------------------------- | -------------------------------------------------------- |
+| light  | `node scripts/harness.mjs --for-task <ref>` | changed format/lint + structure/docs + harness self-test |
+| medium | same                                        | + affected type check + targeted specs                   |
+| full   | same                                        | all gates (final gate at activity close)                 |
+
+- `node scripts/harness.mjs --explain <ref>` prints the level and the gate set
+  without running anything.
+- `node scripts/harness.mjs --fast` is for iteration;
+  `node scripts/harness.mjs --changed` derives light/medium from the working
+  tree.
+- Each task runs **its own level**. The reviewer is invoked **once at activity
+  close**, only when the activity level is full.
+- A `feat` needs a new or extended spec. A non-breaking `fix` needs a
+  regression test that fails without the fix. The reviewer rejects otherwise.
+- Full harness: `node scripts/harness.mjs` (or `npm run harness`).
+- Full matrix, docs/tests per type and pending optimizations:
+  `docs/harness/verification.md`.
+
+### Hard rules
+
+- Never run the full gate after every edit; use `--fast` between edits and the
+  task level when the task is done.
+- Maximum **2 full runs per activity**. A third run needs a concrete reason
+  (e.g. a release/PR gate).
+- Do not edit files while the harness is running.
+- The reviewer sees the whole activity, not a partial change.
+- Historical activities are not migrated; `task.type ?? activity.type ??
+'medium'` is the fallback.

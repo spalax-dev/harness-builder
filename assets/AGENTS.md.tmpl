@@ -1,0 +1,151 @@
+<!--
+  AGENTS.md.tmpl — the entry point every agent reads first.
+
+  Replace: {{PROJECT_NAME}}, {{STACK}}, {{PACKAGE_MANAGER}}, {{HARNESS_CMD}},
+  {{EXPLAIN_CMD}}, {{BOOTSTRAP_CMD}}, {{TEST_CMD}}, {{BUILD_CMD}},
+  {{SOURCE_DIR}}, {{DOCS_DIR}}, {{REPO_MAP_ROWS}}.
+  Delete rows/sections the project does not need. Keep the order: before start,
+  map, stack, hard rules, verification, activities, delegation, session close.
+-->
+
+# AGENTS.md — {{PROJECT_NAME}}
+
+> Agent navigation map. Read only what you need (progressive disclosure).
+
+## Before start
+
+1. `{{HARNESS_CMD}}` — must end green. If it fails, **STOP** and resolve the
+   environment before advancing.
+2. If it reports missing files, run `{{BOOTSTRAP_CMD}}`.
+3. Read `progress/current.md` (session state) and `activities.json` (pending
+   activities/tasks).
+4. Delegate ONE task from ONE pending activity. **Never work directly — always
+   delegate**, except for docs/config/tooling where the orchestrator is the
+   implementer.
+5. Read the task `type` before editing: it decides the verification level.
+
+## Repo map
+
+| Path                                     | When read                      |
+| ---------------------------------------- | ------------------------------ |
+| `activities.json`, `progress/current.md` | always, at start               |
+| `progress/history.md`                    | need past context              |
+| `progress/explore/`                      | research notes from sub-agents |
+| `AGENTS.md`                              | entry point; this file         |
+| `docs/harness/architecture.md`           | before implement               |
+| `docs/harness/structure.md`              | before creating files/folders  |
+| `docs/harness/conventions.md`            | before writing code            |
+| `docs/harness/development.md`            | workflow policy                |
+| `docs/harness/testing.md`                | before writing tests           |
+| `docs/harness/verification.md`           | levels, gates, acceptance      |
+| `docs/harness/git-tracking.md`           | tracked vs ignored             |
+| `docs/harness/CHECKPOINTS.md`            | before declaring done          |
+| `scripts/harness.mjs`                    | verification engine            |
+| `scripts/harness-lib.mjs`                | level/parser logic             |
+| `.opencode/agent/`                       | sub-agent roles                |
+| `{{SOURCE_DIR}}`                         | implement / verify             |
+| `{{DOCS_DIR}}`                           | product and design docs        |
+
+{{REPO_MAP_ROWS}}
+
+- All paths are relative to the repo root. No absolute paths, no `../`.
+
+## Stack
+
+- **{{STACK}}**
+- Package manager: **{{PACKAGE_MANAGER}}**
+- Harness: `{{HARNESS_CMD}}`
+- Build: `{{BUILD_CMD}}`
+- Tests: `{{TEST_CMD}}`
+
+## Hard rules
+
+- **One task at a time**; do not mix activities. Parallel tasks only inside one
+  activity.
+- **Docs → test → implement** — never write code before docs and tests exist.
+  See `docs/harness/development.md`.
+- **No `done` without the task level green** — read the task `type` and run
+  `{{HARNESS_CMD}} --for-task <activity>.<task>`; run the activity level once
+  at close. Full remains the final gate.
+- **Style with the project's documented conventions** — no ad-hoc style, no
+  hardcoded design values. See `docs/harness/conventions.md`.
+- **Structure follows `docs/harness/structure.md`** — new folders/files need a
+  documented home first.
+- **Lint must be clean** — zero tolerance; formatting is the formatter's job,
+  quality/types are the linter's.
+- Document in `progress/current.md` **while** working, not after. Include plan
+  and task breakdown.
+- If unsure, check `docs/` before inventing. If a tool misbehaves, log it in
+  `progress/current.md` and stop — no workarounds.
+- **Never** commit secrets, credentials, generated build output or session
+  state. See `docs/harness/verification.md` and
+  `docs/harness/git-tracking.md`.
+
+## Verification by task type
+
+Classify the task **before** editing. `breaking: true` always means full.
+
+| `type`                                  | Level    | Reviewer               |
+| --------------------------------------- | -------- | ---------------------- |
+| `feat`, `refactor`                      | **full** | yes, at activity close |
+| `fix`, `perf`, `test`                   | medium   | no                     |
+| `chore`, `docs`, `style`, `ci`, `build` | light    | no                     |
+
+| Level  | Command                            | What runs                                        |
+| ------ | ---------------------------------- | ------------------------------------------------ |
+| light  | `{{HARNESS_CMD}} --for-task <ref>` | changed format/lint + structure/docs + self-test |
+| medium | same                               | + affected type check + targeted specs           |
+| full   | same                               | all gates (final gate at activity close)         |
+
+- `{{EXPLAIN_CMD}} <ref>` prints the level without running gates.
+- `{{HARNESS_CMD}} --fast` is for iteration; `--changed` derives light/medium
+  from the working tree.
+- Each task runs **its own level**; the reviewer is invoked **once at activity
+  close**, only when the activity level is full.
+- A `feat` needs a new/extended spec; a non-breaking `fix` needs a regression
+  test that fails without it. The reviewer rejects otherwise.
+- Full matrix and docs/tests per type: `docs/harness/verification.md`.
+
+## Activities
+
+- Types: `feat`, `fix`, `refactor`, `perf`, `test`, `chore`, `docs`, `style`,
+  `ci`, `build`; `breaking: true` is a task flag, not a type.
+- Schema: `{id, type, name, title, description, acceptance[], tasks[], status}`.
+- Task fields: `{id, description, status, type?, breaking?, verification?, agent?}`.
+  New tasks should always carry `type`; legacy tasks fall back to the activity
+  `type`, then `medium`.
+- Agent values: `implementer`, `reviewer`.
+- An active activity with any full-level task needs a task with
+  `agent: "reviewer"`.
+
+## Delegation
+
+| Agent                                        | Use for                             |
+| -------------------------------------------- | ----------------------------------- |
+| `.opencode/agent/main-orchestrator.md`       | planning, decomposition, delegation |
+| `.opencode/agent/task-executor.md`           | implementation                      |
+| `.opencode/agent/implementation-reviewer.md` | validation before done              |
+
+Flow: open `activities.json` → pick a `pending` task → delegate → set the task
+`in_progress` → annotate `progress/current.md` (activity, task, start time).
+
+## Session close
+
+1. The activity level runs once and is green (`{{HARNESS_CMD}}` for full).
+2. Mark task/activity `done` in `activities.json` (activity only when all tasks
+   are done).
+3. Move the summary from `progress/current.md` to the end of
+   `progress/history.md`, then reset `current.md` to the template.
+4. No temp files, debug prints, or context-less TODOs.
+5. If all activities are done, ask the user whether to clean the session
+   (clear `activities.json`, reset `progress/current.md`).
+
+## Greeting
+
+```text
+| > Hello, I am the main orchestrator for {{PROJECT_NAME}}.
+We currently have X pending activity(ies).
+What would you like to do today? (new feature / bug fix / improvement or refactor)
+```
+
+Replace X with the pending count from `activities.json`.

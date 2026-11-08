@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/harness-builder/activities.schema.json",
+  "$comment": "STACK: generic. Merge into the project's activities schema; do not force historical tasks to add `type`.",
+  "title": "activities.json",
+  "description": "Task/activity tracking file consumed by the verification harness.",
+  "type": "object",
+  "required": ["activities"],
+  "properties": {
+    "project": {
+      "type": "string",
+      "description": "Project name (optional, informational)."
+    },
+    "description": {
+      "type": "string",
+      "description": "Project description (optional, informational)."
+    },
+    "activities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/activity"
+      }
+    }
+  },
+  "$defs": {
+    "status": {
+      "enum": ["pending", "in_progress", "done", "blocked"]
+    },
+    "taskType": {
+      "enum": [
+        "feat",
+        "fix",
+        "refactor",
+        "perf",
+        "test",
+        "chore",
+        "docs",
+        "style",
+        "ci",
+        "build"
+      ]
+    },
+    "verification": {
+      "enum": ["full", "medium", "light", "none"]
+    },
+    "agent": {
+      "enum": ["implementer", "reviewer"]
+    },
+    "task": {
+      "type": "object",
+      "required": ["id", "description", "status"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Single letter or short id, e.g. a, b, c."
+        },
+        "description": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "type": {
+          "$ref": "#/$defs/taskType",
+          "description": "Optional for legacy data; required for new tasks in practice."
+        },
+        "breaking": {
+          "type": "boolean",
+          "default": false,
+          "description": "Forces the full level. Convention: fix + breaking => fix!."
+        },
+        "verification": {
+          "$ref": "#/$defs/verification",
+          "description": "Explicit override; wins over type and breaking."
+        },
+        "agent": {
+          "$ref": "#/$defs/agent"
+        }
+      },
+      "additionalProperties": true,
+      "examples": [
+        {
+          "id": "a",
+          "description": "Extract the reading panel into a shared component",
+          "status": "in_progress",
+          "type": "refactor",
+          "breaking": false,
+          "agent": "implementer"
+        },
+        {
+          "id": "b",
+          "description": "Replace get() with find() in the public library service",
+          "status": "pending",
+          "type": "fix",
+          "breaking": true,
+          "agent": "implementer"
+        }
+      ]
+    },
+    "activity": {
+      "type": "object",
+      "required": ["id", "name", "type", "status", "tasks"],
+      "properties": {
+        "id": {
+          "type": ["integer", "string"]
+        },
+        "type": {
+          "$ref": "#/$defs/taskType"
+        },
+        "name": {
+          "type": "string",
+          "description": "kebab-case identifier."
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "acceptance": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/task"
+          }
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        }
+      },
+      "additionalProperties": true,
+      "examples": [
+        {
+          "id": 1,
+          "type": "feat",
+          "name": "reading-panel",
+          "title": "Shared reading panel",
+          "description": "Extract the reading panel and keep behavior.",
+          "acceptance": [
+            "The panel is shared",
+            "Specs cover open/close",
+            "Harness green"
+          ],
+          "tasks": [
+            {
+              "id": "a",
+              "description": "Extract the component and its spec",
+              "status": "pending",
+              "type": "refactor",
+              "agent": "implementer"
+            },
+            {
+              "id": "b",
+              "description": "Review the activity at close",
+              "status": "pending",
+              "type": "chore",
+              "agent": "reviewer"
+            }
+          ],
+          "status": "pending"
+        }
+      ]
+    }
+  }
+}

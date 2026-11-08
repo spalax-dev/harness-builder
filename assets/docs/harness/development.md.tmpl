@@ -1,0 +1,101 @@
+<!--
+  development.md.tmpl → docs/harness/development.md
+
+  Replace: {{HARNESS_CMD}}, {{TASK_LEVEL_CMD}}, {{TEST_CMD}}, {{BUILD_CMD}}.
+-->
+
+# Development Workflow
+
+> How work is built: docs → test → implement.
+
+---
+
+## The pipeline
+
+Every change follows this order. No exceptions.
+
+```text
+1. DOCUMENT   → what does it do? API shape? edge cases?
+2. TEST       → write tests that fail (red)
+3. IMPLEMENT  → write code that passes (green)
+4. REFACTOR   → clean up; tests stay green
+5. VERIFY     → run the task level, not the maximum level
+```
+
+### 1. Document first
+
+Before writing code, update the relevant docs:
+
+- **Architecture** — new module, layer or folder.
+- **Structure** — new file/folder home.
+- **Conventions** — new pattern or rule relaxation.
+- **Verification** — new gate or level change.
+
+Documentation must describe behavior, API shape and edge cases. A doc that only
+restates the code is not documentation.
+
+### 2. Test second
+
+Write tests that validate the documentation:
+
+- Exact output for known inputs.
+- Happy path, error paths and edge cases.
+- The test must fail before the implementation exists.
+- If the feature has no test, it is not implemented yet.
+
+See `docs/harness/testing.md`.
+
+### 3. Implement third
+
+Write the minimal code to make the tests pass:
+
+- Follow `docs/harness/conventions.md`.
+- Follow `docs/harness/structure.md`.
+- Do not add behavior the docs do not describe.
+- Do not skip tests to ship faster.
+
+### 4. Verify
+
+- Iteration: `{{HARNESS_CMD}} --fast`.
+- Task done: `{{TASK_LEVEL_CMD}} <activity>.<task>`.
+- Activity close: `{{HARNESS_CMD}}` (full), then the reviewer if full.
+
+---
+
+## Why this order
+
+| Benefit              | Explanation                                        |
+| -------------------- | -------------------------------------------------- |
+| Design clarity       | Forces the API to be thought through before coding |
+| Living documentation | Docs are written while context is fresh            |
+| Regression safety    | Tests exist from day one                           |
+| Smaller diffs        | Each step is focused                               |
+
+---
+
+## Exceptions
+
+- **Bug fixes** may start with a failing regression test, then document the fix,
+  then implement.
+- **Refactors** with no behavior change may already have tests and docs; update
+  only what became stale.
+- **Research spikes** live in `progress/explore/` or a temporary script; no
+  doc/test requirement until the spike becomes a feature.
+
+---
+
+## Environment
+
+- Use the project's package manager and lockfile; one manager per repo.
+- Commands are project-owned scripts where possible.
+- Do not commit dependencies, build output or secrets.
+
+---
+
+## Declaring done
+
+1. The task level is green (`{{TASK_LEVEL_CMD}} <ref>`).
+2. At activity close, the activity level is green (`{{HARNESS_CMD}}` for full).
+3. The reviewer passes the activity when the level is full.
+4. The task/activity is marked `done` in `activities.json`.
+5. The summary moves to `progress/history.md`.

@@ -1,0 +1,54 @@
+<!--
+  CHECKPOINTS.md.tmpl → docs/harness/CHECKPOINTS.md
+
+  Replace: {{HARNESS_CMD}}, {{TEST_CMD}}, {{SOURCE_DIR}}, {{DOCS_DIR}}.
+-->
+
+# CHECKPOINTS — Final State Evaluation
+
+> The path is not evaluated, the destination is. These are objective
+> checkpoints a human or an agent can use to decide if the project is healthy.
+
+## C1 — Harness is complete
+
+- [ ] `AGENTS.md`, `scripts/harness.mjs`, `scripts/harness-lib.mjs`,
+      `scripts/build_harness.mjs`, `activities.json`, `progress/current.md` exist.
+- [ ] `{{DOCS_DIR}}/harness/architecture.md`, `conventions.md`, `structure.md`,
+      `development.md`, `testing.md`, `verification.md` exist.
+- [ ] `{{HARNESS_CMD}}` exits with code 0.
+- [ ] `node --test scripts/harness-lib.spec.mjs` exits with code 0.
+
+## C2 — State is coherent
+
+- [ ] At most one activity is `in_progress` in `activities.json`.
+- [ ] Every `done` task ran its level (`--for-task`); every `done` full-level
+      activity ran the full harness once at close.
+- [ ] Every `done` activity has associated passing tests.
+- [ ] `progress/current.md` is empty or describes the active session.
+
+## C3 — Code respects architecture
+
+- [ ] `{{SOURCE_DIR}}` only contains modules described in
+      `{{DOCS_DIR}}/harness/architecture.md` and `structure.md`.
+- [ ] No new dependency outside the manifest without review.
+- [ ] No stray debug output, no TODOs without context.
+
+## C4 — Verification is real
+
+- [ ] The source tree has tests covering the public behavior.
+- [ ] Type checks pass for every configured package.
+- [ ] Tests mock external boundaries only; no real network calls.
+- [ ] `{{TEST_CMD}}` shows > 0 tests and all green.
+- [ ] The production build succeeds.
+
+## C5 — Session closed properly
+
+- [ ] No suspicious untracked files (`*.tmp`, build artifacts outside ignores).
+- [ ] `progress/history.md` has an entry for the last session.
+- [ ] The last worked activity reflects its correct state.
+- [ ] No secrets, credentials or generated output are tracked.
+
+---
+
+**How to use this file:** the reviewer goes through each checkbox, marks `[x]`
+or `[ ]`, and rejects session close if any C1–C5 box remains empty.

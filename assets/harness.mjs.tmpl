@@ -1,0 +1,1092 @@
+#!/usr/bin/env node
+/**
+ * harness.mjs — stack-agnostic verification harness.
+ *
+ * STACK: generic (Node/npm example).
+ * Copy to `scripts/harness.mjs` and replace the CONFIG block with your stack.
+ *
+ * Placeholder map (the example values below are already substituted so the
+ * file parses and starts; replace them with the detected commands):
+ *   {{STACK}}           -> CONFIG.stack
+ *   {{PACKAGE_MANAGER}} -> commands inside CONFIG.gates
+ *   {{FORMAT_CMD}}      -> CONFIG.gates.format.full
+ *   {{LINT_CMD}}        -> CONFIG.gates.lint.full
+ *   {{TYPE_CMD}}        -> CONFIG.gates.type.full
+ *   {{BUILD_CMD}}       -> CONFIG.gates.build.full
+ *   {{TEST_CMD}}        -> CONFIG.gates.test.full
+ *   {{TARGET_TEST_CMD}} -> CONFIG.specs.command
+ *   {{CONTRACT_CMD}}    -> CONFIG.gates.contract
+ *   {{DOC_PATHS}}       -> CONFIG.docs
+ *   {{CODE_ROOTS}}      -> CONFIG.codeRoots
+ *   {{TEST_ROOTS}}      -> CONFIG.testRoots
+ *   {{IGNORE_DIRS}}     -> CONFIG.structure.ignoreDirs
+ * Copy `harness-lib.mjs.tmpl` to `scripts/harness-lib.mjs` and
+ * `harness-lib.spec.mjs.tmpl` to `scripts/harness-lib.spec.mjs`.
+ *
+ * GATE markers (delete a gate from CONFIG if the stack has no equivalent):
+ *   // GATE: format   — formatter check
+ *   // GATE: lint     — linter
+ *   // GATE: type     — type checker / compiler static check
+ *   // GATE: build    — production artifact
+ *   // GATE: test     — test suite / targeted tests
+ *   // GATE: contract — artifact assertion after build (CSS, exports, schema)
+ *   // GATE: structure— tree/naming/forbidden-pattern rules
+ *   // GATE: docs     — docs exist and are not placeholders
+ *
+ * Modes:
+ *   default        full (final gate)
+ *   --for-task     level of <activity>.<task> (light/medium/full)
+ *   --explain      print level + checks, run no gate
+ *   --fast         changed-file iteration (no type/build/test)
+ *   --changed      auto light/medium from the working tree
+ *   --dev-build    development build (not a full substitute)
+ *   --skip-*       format, lint, type, build, test, contract
+ */
+
+import { spawn } from "node:child_process";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  VALID_TASK_TYPES,
+  VERIFICATION_LEVELS,
+  activityLevel,
+  classifyChangedFiles,
+  describeMode,
+  effectiveTaskType,
+  modeForLevel,
+  needsReviewer,
+  parseTaskRef,
+  verificationLevel,
+} from "./harness-lib.mjs";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+// ─── CONFIG ─────────────────────────────────────────────────────────────────
+// Replace this block. Keep the shape; set a gate to null to skip it.
+const CONFIG = {
+  stack: "generic",
+
+  // Changed files under these roots select the medium level.
+  codeRoots: ["src/", "scripts/"],
+
+  // Only files under these roots are searched for sibling specs. Keep tooling
+  // (scripts/) out unless it really has colocated tests; its self-test is
+  // covered by CONFIG.selfTest.
+  testRoots: ["src/"],
+
+  // GATE: docs — required docs and their minimum word count.
+  docs: [{ path: "README.md", minWords: 20 }],
+
+  // GATE: structure — replace with your tree rules (all empty = no rules).
+  structure: {
+    ignoreDirs: [
+      "node_modules",
+      ".git",
+      "dist",
+      "build",
+      "out",
+      "coverage",
+      ".next",
+      ".nuxt",
+      ".svelte-kit",
+      ".angular",
+      ".turbo",
+      ".cache",
+      ".venv",
+      "venv",
+      "__pycache__",
+      "target",
+    ],
+    requiredDirs: [],
+    // Example:
+    // { dir: 'src', extensions: ['.ts'], pattern: /@NgModule\s*\(/, message: 'standalone only' }
+    forbidden: [],
+    // Example:
+    // { dir: 'src', extensions: ['.ts'], limit: 60, exclude: [/\.spec\./] }
+    maxLines: [],
+  },
+
+  // GATE: test — targeted spec discovery and command.
+  specs: {
+    pattern: /\.(spec|test)\.(?:[cm]?[jt]sx?)$/,
+    candidates(file) {
+      if (/\.(?:[cm]?[jt]sx?)$/.test(file)) {
+        const base = file.replace(/\.(?:[cm]?[jt]sx?)$/, "");
+        return [
+          ".spec.ts",
+          ".spec.tsx",
+          ".spec.js",
+          ".spec.jsx",
+          ".test.ts",
+          ".test.tsx",
+          ".test.js",
+          ".test.jsx",
+        ].map((suffix) => `${base}${suffix}`);
+      }
+      if (file.endsWith(".py")) {
+        const dir = dirname(file);
+        const name = basename(file, ".py");
+        return [`${dir}/test_${name}.py`, `${dir}/${name}_test.py`];
+      }
+      if (file.endsWith(".go")) {
+        return [`${file.slice(0, -3)}_test.go`];
+      }
+      return [];
+    },
+    command(specs) {
+      return [["npm", "exec", "vitest", "run", ...specs]];
+    },
+    fallback: [["npm", "run", "test"]],
+  },
+
+  // GATE: format / lint / type / build / test / contract.
+  gates: {
+    format: {
+      full: [["npm", "run", "format:check"]],
+      changed: (files) => [
+        ["npm", "exec", "prettier", "--check", "--ignore-unknown", ...files],
+      ],
+    },
+    lint: {
+      full: [["npm", "run", "lint"]],
+      filter: (file) => /\.(?:[cm]?[jt]sx?)$/.test(file),
+      changed: (files) => [
+        ["npm", "exec", "eslint", ...files, "--max-warnings", "0"],
+      ],
+    },
+    type: {
+      full: [["npm", "run", "typecheck"]],
+      affected: (files) =>
+        files.some((file) => file.startsWith("src/"))
+          ? [["npm", "run", "typecheck"]]
+          : null,
+    },
+    build: {
+      full: [["npm", "run", "build"]],
+      dev: [["npm", "run", "build", "--", "--mode", "development"]],
+    },
+    test: {
+      full: [["npm", "run", "test"]],
+    },
+    // GATE: contract [OPTIONAL] — runs after build; set null to skip.
+    contract: null,
+  },
+
+  // Runs in light/medium modes only, to keep full identical to the old gate.
+  selfTest: ["node", "--test", "scripts/harness-lib.spec.mjs"],
+};
+
+// ─── CLI ────────────────────────────────────────────────────────────────────
+const RED = "\x1b[0;31m";
+const GREEN = "\x1b[0;32m";
+const YELLOW = "\x1b[0;33m";
+const GREY = "\x1b[0;90m";
+const NC = "\x1b[0m";
+
+const argv = process.argv.slice(2);
+let exitCode = 0;
+let activities = [];
+let mode = null;
+let forTask = null;
+let activeActivity = null;
+let changedFilesCache = null;
+
+function ok(message) {
+  console.log(`${GREEN}[OK]${NC}    ${message}`);
+}
+function warn(message) {
+  console.log(`${YELLOW}[WARN]${NC}  ${message}`);
+}
+function skip(message) {
+  console.log(`${GREY}[SKIP]${NC}  ${message}`);
+}
+function fail(message) {
+  console.log(`${RED}[FAIL]${NC}  ${message}`);
+  exitCode = 1;
+}
+
+function hasFlag(flag) {
+  return argv.some((arg) => arg === flag || arg.startsWith(`${flag}=`));
+}
+
+function argvValue(flag) {
+  const inline = argv.find((arg) => arg.startsWith(`${flag}=`));
+  if (inline) {
+    return inline.slice(flag.length + 1);
+  }
+  const index = argv.indexOf(flag);
+  if (
+    index >= 0 &&
+    index + 1 < argv.length &&
+    !argv[index + 1].startsWith("--")
+  ) {
+    return argv[index + 1];
+  }
+  return null;
+}
+
+const FOR_TASK = argvValue("--for-task");
+const EXPLAIN = hasFlag("--explain");
+const FAST = hasFlag("--fast");
+const CHANGED = hasFlag("--changed");
+const SKIP_FORMAT = hasFlag("--skip-format");
+const SKIP_LINT = hasFlag("--skip-lint");
+const SKIP_TYPE = hasFlag("--skip-type") || hasFlag("--skip-tsc");
+const SKIP_BUILD = hasFlag("--skip-build");
+const SKIP_TESTS = hasFlag("--skip-tests");
+const SKIP_CONTRACT = hasFlag("--skip-contract");
+const DEV_BUILD = hasFlag("--dev-build");
+const HELP = hasFlag("--help");
+
+function printHelp() {
+  console.log(`Usage: node scripts/harness.mjs [options]
+
+  (default)             Full verification: every configured gate.
+  --for-task <a>.<t>    Run the level of a task (e.g. 12.a).
+  --explain             Print the resolved level/checks and run no gate.
+  --fast                Changed-file iteration (no type/build/test).
+  --changed             Auto level from the working tree (light or medium).
+  --skip-format         Skip the formatter gate.
+  --skip-lint           Skip the linter gate.
+  --skip-type           Skip the type-check gate (--skip-tsc alias).
+  --skip-build          Skip the build gate.
+  --skip-tests          Skip the test gate.
+  --skip-contract       Skip the artifact/contract gate.
+  --dev-build           Development build instead of production.
+  --help                Show this help.
+
+Aliases: harness:task, harness:explain, harness:fast, harness:changed, harness:build.`);
+}
+
+if (HELP) {
+  printHelp();
+  process.exit(0);
+}
+
+if (hasFlag("--for-task") && !FOR_TASK) {
+  fail("--for-task requires <activity>.<task> (example: 12.a)");
+  process.exit(1);
+}
+
+const KNOWN_FLAGS = new Set([
+  "--for-task",
+  "--explain",
+  "--fast",
+  "--changed",
+  "--skip-format",
+  "--skip-lint",
+  "--skip-type",
+  "--skip-tsc",
+  "--skip-build",
+  "--skip-tests",
+  "--skip-contract",
+  "--dev-build",
+  "--help",
+]);
+for (let index = 0; index < argv.length; index += 1) {
+  const arg = argv[index];
+  if (!arg.startsWith("--")) {
+    continue;
+  }
+  const name = arg.split("=")[0];
+  if (name === "--no-cache") {
+    warn("No cache exists yet; --no-cache ignored.");
+    continue;
+  }
+  if (!KNOWN_FLAGS.has(name)) {
+    warn(`Unknown flag ${name} ignored.`);
+    continue;
+  }
+  if (name === "--for-task" && !arg.includes("=")) {
+    index += 1;
+  }
+}
+
+// ─── Async process runner ───────────────────────────────────────────────────
+// Never use spawnSync in a loop: independent gates run in parallel below.
+function run(
+  cmd,
+  args,
+  { cwd = ROOT, env = process.env, timeout = 15 * 60_000 } = {},
+) {
+  return new Promise((resolvePromise) => {
+    const child = spawn(cmd, args, {
+      cwd,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    let timer = null;
+    const finish = (code, signal) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+      resolvePromise({ code, signal, stdout, stderr });
+    };
+    timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      setTimeout(() => child.kill("SIGKILL"), 2000);
+    }, timeout);
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", (error) => {
+      stderr += `\n${error.message}`;
+      finish(127, null);
+    });
+    child.on("close", (code, signal) => finish(code ?? 1, signal));
+  });
+}
+
+async function runCommands(commands) {
+  let last = { code: 0, stdout: "", stderr: "" };
+  for (const [cmd, ...args] of commands) {
+    last = await run(cmd, args);
+    if (last.code !== 0) {
+      return last;
+    }
+  }
+  return last;
+}
+
+function printFailure(result) {
+  const text = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.trim();
+  if (!text) {
+    return;
+  }
+  console.log(text.split("\n").slice(-200).join("\n"));
+}
+
+async function executeGate(label, commands) {
+  if (!commands || commands.length === 0) {
+    return { label, skipped: true };
+  }
+  const result = await runCommands(commands);
+  return { label, ok: result.code === 0, result };
+}
+
+/** Run independent gates in parallel; print in configured order. */
+async function runGates(entries) {
+  const results = await Promise.all(
+    entries.map(([label, commands]) => executeGate(label, commands)),
+  );
+  for (const result of results) {
+    if (result.skipped) {
+      skip(`${result.label}: not configured`);
+    } else if (result.ok) {
+      ok(result.label);
+    } else {
+      fail(result.label);
+      printFailure(result.result);
+    }
+  }
+}
+
+// ─── Changed files ──────────────────────────────────────────────────────────
+async function gitFileList(args) {
+  const result = await run("git", args);
+  if (result.code !== 0) {
+    return [];
+  }
+  return result.stdout
+    .split("\n")
+    .map((file) => file.trim())
+    .filter(Boolean);
+}
+
+async function getChangedFiles({ includeLastCommit = false } = {}) {
+  const files = new Set();
+  for (const args of [
+    ["diff", "--name-only", "HEAD"],
+    ["diff", "--cached", "--name-only"],
+    ["ls-files", "--others", "--exclude-standard"],
+  ]) {
+    for (const file of await gitFileList(args)) {
+      files.add(file);
+    }
+  }
+  if (files.size === 0 && includeLastCommit) {
+    for (const file of await gitFileList(["diff", "--name-only", "HEAD~1"])) {
+      files.add(file);
+    }
+  }
+  return [...files].sort();
+}
+
+async function changedFilesForRun() {
+  if (changedFilesCache) {
+    return changedFilesCache;
+  }
+  const includeLastCommit = Boolean(FOR_TASK && mode?.level === "medium");
+  changedFilesCache = await getChangedFiles({ includeLastCommit });
+  if (mode?.level === "medium" && changedFilesCache.length === 0) {
+    warn(
+      "No changed files in the working tree or last commit; using package-level checks.",
+    );
+  }
+  return changedFilesCache;
+}
+
+// ─── Activities ─────────────────────────────────────────────────────────────
+function loadActivities() {
+  const path = join(ROOT, "activities.json");
+  if (!existsSync(path)) {
+    warn(
+      "activities.json missing; create it from assets/activities.schema.json.",
+    );
+    return [];
+  }
+  const data = JSON.parse(readFileSync(path, "utf-8"));
+  return Array.isArray(data) ? data : (data.activities ?? []);
+}
+
+const REQUIRED_ACTIVITY_FIELDS = ["id", "name", "type", "status", "tasks"];
+const REQUIRED_TASK_FIELDS = ["id", "description", "status"];
+const VALID_STATUSES = ["pending", "in_progress", "done", "blocked"];
+const VALID_AGENTS = ["implementer", "reviewer"];
+
+function validateActivities(items) {
+  let schemaOk = true;
+  for (const activity of items) {
+    for (const field of REQUIRED_ACTIVITY_FIELDS) {
+      if (!(field in activity)) {
+        fail(`Activity ${activity.id ?? "?"} missing required field: ${field}`);
+        schemaOk = false;
+      }
+    }
+    if (!VALID_STATUSES.includes(activity.status)) {
+      fail(`Invalid activity status in ${activity.id}: ${activity.status}`);
+      schemaOk = false;
+    }
+    if (activity.type && !VALID_TASK_TYPES.includes(activity.type)) {
+      fail(`Invalid activity type in ${activity.id}: ${activity.type}`);
+      schemaOk = false;
+    }
+    for (const task of activity.tasks ?? []) {
+      for (const field of REQUIRED_TASK_FIELDS) {
+        if (!(field in task)) {
+          fail(
+            `Task ${activity.id}/${task.id ?? "?"} missing required field: ${field}`,
+          );
+          schemaOk = false;
+        }
+      }
+      if (!VALID_STATUSES.includes(task.status)) {
+        fail(
+          `Invalid task status in ${activity.id}/${task.id}: ${task.status}`,
+        );
+        schemaOk = false;
+      }
+      if (task.type && !VALID_TASK_TYPES.includes(task.type)) {
+        fail(`Invalid task type in ${activity.id}/${task.id}: ${task.type}`);
+        schemaOk = false;
+      }
+      if (task.breaking !== undefined && typeof task.breaking !== "boolean") {
+        fail(`Task ${activity.id}/${task.id}: breaking must be boolean`);
+        schemaOk = false;
+      }
+      if (
+        task.verification &&
+        !VERIFICATION_LEVELS.includes(task.verification)
+      ) {
+        fail(`Task ${activity.id}/${task.id}: invalid verification override`);
+        schemaOk = false;
+      }
+      if (task.agent && !VALID_AGENTS.includes(task.agent)) {
+        fail(`Task ${activity.id}/${task.id}: invalid agent`);
+        schemaOk = false;
+      }
+    }
+  }
+
+  const inProgress = items.filter(
+    (activity) => activity.status === "in_progress",
+  );
+  if (inProgress.length > 1) {
+    fail(`Found ${inProgress.length} activities in_progress (max 1)`);
+  }
+
+  for (const activity of items) {
+    if (!["pending", "in_progress"].includes(activity.status)) {
+      continue;
+    }
+    const tasks = activity.tasks ?? [];
+    const reviewer = tasks.find((task) => task.agent === "reviewer");
+    if (needsReviewer(activity) && !reviewer) {
+      warn(
+        `Activity ${activity.id} has full-level tasks but no reviewer task.`,
+      );
+    }
+    if (needsReviewer(activity) && reviewer) {
+      const firstAgent = tasks.find((task) => task.agent);
+      if (
+        firstAgent?.agent === "reviewer" &&
+        tasks.some((task) => task.agent === "implementer")
+      ) {
+        warn(`Activity ${activity.id}: reviewer declared before implementer.`);
+      }
+    }
+    for (const task of tasks) {
+      if (
+        !task.type &&
+        !activity.type &&
+        ["pending", "in_progress"].includes(task.status)
+      ) {
+        warn(
+          `Task ${activity.id}/${task.id} has no type and the activity has no type; using medium.`,
+        );
+      }
+    }
+  }
+
+  if (schemaOk) {
+    ok(`activities.json valid (${items.length} activities)`);
+  }
+}
+
+function resolveForTask() {
+  const parsed = parseTaskRef(FOR_TASK);
+  if (!parsed) {
+    fail(
+      `--for-task expects <activity>.<task> (example: 12.a); got '${FOR_TASK}'`,
+    );
+    process.exit(1);
+  }
+  const activity = activities.find(
+    (item) => String(item.id) === parsed.activityId,
+  );
+  if (!activity) {
+    const valid = activities.map((item) => item.id).join(", ") || "none";
+    fail(
+      `--for-task ${FOR_TASK}: activity ${parsed.activityId} not found (valid: ${valid})`,
+    );
+    process.exit(1);
+  }
+  const task = (activity.tasks ?? []).find((item) => item.id === parsed.taskId);
+  if (!task) {
+    const valid =
+      (activity.tasks ?? [])
+        .map((item) => `${activity.id}.${item.id}`)
+        .join(", ") || "none";
+    fail(
+      `--for-task ${FOR_TASK}: task ${parsed.taskId} not found in activity ${activity.id} (valid: ${valid})`,
+    );
+    process.exit(1);
+  }
+  forTask = { activity, task };
+  if (task.status === "done") {
+    warn(`Task ${FOR_TASK} is already done; re-running its level.`);
+  }
+  if (task.status === "pending") {
+    warn(`Task ${FOR_TASK} is still pending; its level will run anyway.`);
+  }
+  if (task.verification === "none") {
+    warn(
+      `Task ${FOR_TASK} overrides verification to none; every gate will be skipped.`,
+    );
+  }
+}
+
+async function resolveMode() {
+  activeActivity =
+    activities.find((activity) => activity.status === "in_progress") ?? null;
+  if (FOR_TASK) {
+    if (FAST || CHANGED) {
+      warn("--for-task wins over --fast/--changed.");
+    }
+    mode = modeForLevel(
+      forTask ? verificationLevel(forTask.task, forTask.activity) : "full",
+    );
+  } else if (FAST) {
+    mode = modeForLevel("light");
+  } else if (CHANGED) {
+    changedFilesCache = await getChangedFiles();
+    mode = modeForLevel(
+      classifyChangedFiles(changedFilesCache, CONFIG.codeRoots),
+    );
+    if (changedFilesCache.length === 0) {
+      skip("--changed: no changed files; running light checks.");
+    }
+  } else {
+    mode = modeForLevel("full");
+  }
+
+  if (SKIP_FORMAT) {
+    mode.format = "skip";
+  }
+  if (SKIP_LINT) {
+    mode.lint = "skip";
+  }
+  if (SKIP_TYPE) {
+    mode.type = "skip";
+  }
+  if (SKIP_BUILD) {
+    mode.build = "skip";
+  }
+  if (SKIP_TESTS) {
+    mode.test = "skip";
+  }
+  if (SKIP_CONTRACT) {
+    mode.contract = "skip";
+  }
+  if (DEV_BUILD && mode.build !== "skip") {
+    mode.build = "development";
+  }
+
+  const completeFull =
+    mode.level === "full" &&
+    mode.type === "all" &&
+    mode.build === "production" &&
+    mode.test === "all";
+  if (!EXPLAIN && mode.level === "full" && !completeFull) {
+    warn(
+      "Full level with skipped/reduced gates: this is not a complete full verification.",
+    );
+  }
+  if (!EXPLAIN && !FOR_TASK && mode.level === "full" && activeActivity) {
+    const inProgress = (activeActivity.tasks ?? []).find(
+      (task) => task.status === "in_progress",
+    );
+    if (
+      inProgress &&
+      inProgress.agent !== "reviewer" &&
+      verificationLevel(inProgress, activeActivity) === "light"
+    ) {
+      warn(
+        `Task ${activeActivity.id}.${inProgress.id} is light; you are running full. Consider: node scripts/harness.mjs --for-task ${activeActivity.id}.${inProgress.id}`,
+      );
+    }
+  }
+}
+
+function suggestedTask(activity) {
+  const tasks = activity.tasks ?? [];
+  if (tasks.length === 0) {
+    return null;
+  }
+  const level = activityLevel(activity);
+  const inProgress = tasks.find((task) => task.status === "in_progress");
+  if (level === "full") {
+    if (inProgress && verificationLevel(inProgress, activity) === "full") {
+      return inProgress;
+    }
+    const fullTask = tasks.find(
+      (task) => verificationLevel(task, activity) === "full",
+    );
+    if (fullTask) {
+      return fullTask;
+    }
+  }
+  return (
+    inProgress ?? tasks.find((task) => task.status === "pending") ?? tasks[0]
+  );
+}
+
+function printNextHint() {
+  const active =
+    forTask?.activity ??
+    activities.find((activity) => activity.status === "in_progress");
+  if (!active) {
+    return;
+  }
+  const level = activityLevel(active);
+  const task = suggestedTask(active);
+  if (!task) {
+    return;
+  }
+  console.log(
+    `\nNext: activity ${active.id} → level ${level}. Suggested: node scripts/harness.mjs --for-task ${active.id}.${task.id}`,
+  );
+  if (level === "full" && !FOR_TASK) {
+    const reviewer = (active.tasks ?? []).find(
+      (item) => item.agent === "reviewer",
+    );
+    console.log(
+      reviewer
+        ? `Reviewer required before closing: ${active.id}.${reviewer.id}`
+        : "Reviewer required before closing: no reviewer task declared.",
+    );
+  }
+}
+
+function printExplain(currentMode) {
+  if (FOR_TASK && forTask) {
+    const type = effectiveTaskType(forTask.task, forTask.activity) ?? "unknown";
+    const suffix = forTask.task.breaking ? "!" : "";
+    const override = forTask.task.verification
+      ? `, override=${forTask.task.verification}`
+      : "";
+    const level = verificationLevel(forTask.task, forTask.activity);
+    console.log(
+      `Task ${forTask.activity.id}.${forTask.task.id} (${type}${suffix}${override}) → level: ${level}`,
+    );
+    console.log(`  checks: ${describeMode(currentMode)}`);
+    return;
+  }
+  if (FAST || CHANGED) {
+    console.log(
+      `Mode: ${FAST ? "--fast" : "--changed"} → level: ${currentMode.level}`,
+    );
+    console.log(`  checks: ${describeMode(currentMode)}`);
+    return;
+  }
+  if (!activeActivity) {
+    console.log("No activity in_progress. Default level: full.");
+    return;
+  }
+  console.log(
+    `Activity ${activeActivity.id} → level: ${activityLevel(activeActivity)}`,
+  );
+  for (const task of activeActivity.tasks ?? []) {
+    const type = effectiveTaskType(task, activeActivity) ?? "unknown";
+    console.log(
+      `  ${activeActivity.id}.${task.id} (${type}${task.breaking ? "!" : ""}) → ${verificationLevel(task, activeActivity)}`,
+    );
+  }
+  console.log(`  checks: ${describeMode(currentMode)}`);
+}
+
+// ─── Early --explain (no gates) ─────────────────────────────────────────────
+if (EXPLAIN) {
+  try {
+    activities = loadActivities();
+  } catch (error) {
+    fail(`activities.json invalid: ${error.message}`);
+    process.exit(1);
+  }
+  if (FOR_TASK) {
+    resolveForTask();
+  }
+  await resolveMode();
+  if (exitCode !== 0) {
+    process.exit(1);
+  }
+  printExplain(mode);
+  process.exit(0);
+}
+
+// ─── Structure gate ─────────────────────────────────────────────────────────
+function walkFiles(dir, extensions, out = []) {
+  if (!existsSync(dir)) {
+    return out;
+  }
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (CONFIG.structure.ignoreDirs.includes(entry.name)) {
+      continue;
+    }
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walkFiles(full, extensions, out);
+    } else if (extensions.includes(extname(entry.name))) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+function countCodeLines(source) {
+  let count = 0;
+  for (const raw of source.split("\n")) {
+    const line = raw.trim();
+    if (
+      !line ||
+      line.startsWith("//") ||
+      line.startsWith("#") ||
+      line.startsWith("/*")
+    ) {
+      continue;
+    }
+    count += 1;
+  }
+  return count;
+}
+
+function runStructure() {
+  const rules = CONFIG.structure;
+  if (
+    rules.requiredDirs.length === 0 &&
+    rules.forbidden.length === 0 &&
+    rules.maxLines.length === 0
+  ) {
+    ok("structure: no project-specific rules configured");
+    return;
+  }
+  let structureOk = true;
+  for (const dir of rules.requiredDirs) {
+    if (!existsSync(join(ROOT, dir))) {
+      fail(`structure: missing required directory ${dir}`);
+      structureOk = false;
+    }
+  }
+  for (const rule of rules.forbidden) {
+    for (const file of walkFiles(join(ROOT, rule.dir), rule.extensions)) {
+      if (rule.pattern.test(readFileSync(file, "utf-8"))) {
+        fail(`structure: ${relative(ROOT, file)} violates ${rule.message}`);
+        structureOk = false;
+      }
+    }
+  }
+  for (const rule of rules.maxLines) {
+    for (const file of walkFiles(join(ROOT, rule.dir), rule.extensions)) {
+      if (rule.exclude?.some((pattern) => pattern.test(file))) {
+        continue;
+      }
+      const lines = countCodeLines(readFileSync(file, "utf-8"));
+      if (lines > rule.limit) {
+        fail(
+          `structure: ${relative(ROOT, file)} has ${lines} code lines (limit ${rule.limit})`,
+        );
+        structureOk = false;
+      }
+    }
+  }
+  if (structureOk) {
+    ok("structure");
+  }
+}
+
+// ─── Docs gate ──────────────────────────────────────────────────────────────
+function runDocs() {
+  if (CONFIG.docs.length === 0) {
+    skip("docs: no required docs configured");
+    return;
+  }
+  let docsOk = true;
+  for (const doc of CONFIG.docs) {
+    const path = join(ROOT, doc.path);
+    if (!existsSync(path)) {
+      fail(`docs: missing ${doc.path}`);
+      docsOk = false;
+      continue;
+    }
+    const words = readFileSync(path, "utf-8").trim().split(/\s+/).length;
+    if (words < (doc.minWords ?? 50)) {
+      fail(`docs: ${doc.path} looks like a placeholder (${words} words)`);
+      docsOk = false;
+    }
+  }
+  if (docsOk) {
+    ok(`docs (${CONFIG.docs.length} file(s))`);
+  }
+}
+
+// ─── Gate assembly ──────────────────────────────────────────────────────────
+async function fileCheckEntries(currentMode) {
+  const entries = [];
+  if (currentMode.format === "skip" && currentMode.lint === "skip") {
+    skip("format/lint: skipped");
+    return entries;
+  }
+  if (currentMode.format === "all") {
+    entries.push(["format", CONFIG.gates.format.full]);
+  }
+  if (currentMode.lint === "all") {
+    entries.push(["lint", CONFIG.gates.lint.full]);
+  }
+  if (currentMode.format === "changed" || currentMode.lint === "changed") {
+    const files = (await changedFilesForRun()).filter((file) =>
+      existsSync(join(ROOT, file)),
+    );
+    if (files.length === 0) {
+      skip("format/lint: no changed files");
+      return entries;
+    }
+    if (currentMode.format === "changed") {
+      entries.push(["format (changed)", CONFIG.gates.format.changed(files)]);
+    }
+    if (currentMode.lint === "changed") {
+      const lintFiles = files.filter(
+        (file) => CONFIG.gates.lint.filter?.(file) ?? true,
+      );
+      if (lintFiles.length === 0) {
+        skip("lint: no lintable changed files");
+      } else {
+        entries.push(["lint (changed)", CONFIG.gates.lint.changed(lintFiles)]);
+      }
+    }
+  }
+  return entries;
+}
+
+async function typeEntry(currentMode) {
+  if (currentMode.type === "skip") {
+    skip("type: skipped");
+    return null;
+  }
+  if (currentMode.type === "all") {
+    return ["type", CONFIG.gates.type.full];
+  }
+  const files = await changedFilesForRun();
+  const commands = CONFIG.gates.type.affected(files);
+  if (!commands) {
+    skip("type: no affected package");
+    return null;
+  }
+  return ["type (affected)", commands];
+}
+
+async function testEntry(currentMode) {
+  if (currentMode.test === "skip") {
+    skip("test: skipped");
+    return null;
+  }
+  if (currentMode.test === "all") {
+    return ["test", CONFIG.gates.test.full];
+  }
+  const files = await changedFilesForRun();
+  if (files.length === 0) {
+    warn("test: no changed files; using fallback");
+    return ["test (fallback)", CONFIG.specs.fallback];
+  }
+  const specs = new Set();
+  const unmapped = [];
+  for (const file of files) {
+    if (!CONFIG.testRoots.some((root) => file.startsWith(root))) {
+      continue;
+    }
+    if (CONFIG.specs.pattern.test(file)) {
+      if (existsSync(join(ROOT, file))) {
+        specs.add(file);
+      }
+      continue;
+    }
+    const candidate = CONFIG.specs
+      .candidates(file)
+      .find((item) => existsSync(join(ROOT, item)));
+    if (candidate) {
+      specs.add(candidate);
+    } else {
+      unmapped.push(file);
+    }
+  }
+  if (unmapped.length > 0 || specs.size === 0) {
+    warn(
+      unmapped.length > 0
+        ? `test: no sibling spec for ${unmapped.join(", ")}; using fallback`
+        : "test: no targeted spec matched; using fallback",
+    );
+    return ["test (fallback)", CONFIG.specs.fallback];
+  }
+  return ["test (targeted)", CONFIG.specs.command([...specs].sort())];
+}
+
+// ─── Summary ────────────────────────────────────────────────────────────────
+function printSummary() {
+  if (exitCode === 0) {
+    ok("Environment ready. You can start working.");
+  } else {
+    fail("Environment NOT ready. Resolve errors before advancing.");
+  }
+  const completeFull =
+    mode.level === "full" &&
+    mode.type === "all" &&
+    mode.build === "production" &&
+    mode.test === "all";
+  if (
+    FOR_TASK &&
+    forTask &&
+    mode.level === "full" &&
+    completeFull &&
+    exitCode === 0
+  ) {
+    const reviewer = (forTask.activity.tasks ?? []).find(
+      (task) => task.agent === "reviewer",
+    );
+    if (reviewer) {
+      ok(
+        `Full level gates passed. Reviewer task required before closing: ${forTask.activity.id}.${reviewer.id}`,
+      );
+    } else {
+      warn("Full level gates passed, but no reviewer task is declared.");
+    }
+  }
+  printNextHint();
+}
+
+// ─── Main ───────────────────────────────────────────────────────────────────
+async function main() {
+  try {
+    activities = loadActivities();
+  } catch (error) {
+    fail(`activities.json invalid: ${error.message}`);
+    process.exit(1);
+  }
+  validateActivities(activities);
+  if (FOR_TASK) {
+    resolveForTask();
+  }
+  await resolveMode();
+
+  if (mode.level === "none") {
+    warn("Verification level none: every gate is skipped.");
+    printSummary();
+    process.exit(exitCode);
+  }
+
+  if (mode.level !== "full" && CONFIG.selfTest) {
+    await runGates([["harness self-test", [CONFIG.selfTest]]]);
+  }
+
+  const phase1 = await fileCheckEntries(mode);
+  const type = await typeEntry(mode);
+  if (type) {
+    phase1.push(type);
+  }
+  if (phase1.length > 0) {
+    await runGates(phase1);
+  }
+
+  if (mode.structure !== "skip") {
+    runStructure();
+  } else {
+    skip("structure: skipped by level");
+  }
+  if (mode.docs !== "skip") {
+    runDocs();
+  } else {
+    skip("docs: skipped by level");
+  }
+
+  const heavy = [];
+  const test = await testEntry(mode);
+  if (test) {
+    heavy.push(test);
+  }
+  if (mode.build !== "skip") {
+    heavy.push([
+      "build",
+      mode.build === "development"
+        ? CONFIG.gates.build.dev
+        : CONFIG.gates.build.full,
+    ]);
+  } else {
+    skip("build: skipped by level");
+  }
+  if (heavy.length > 0) {
+    await runGates(heavy);
+  }
+
+  if (mode.contract !== "skip" && CONFIG.gates.contract) {
+    await runGates([["contract", CONFIG.gates.contract.full]]);
+  } else {
+    skip("contract: skipped by level or not configured");
+  }
+
+  printSummary();
+  process.exit(exitCode);
+}
+
+main().catch((error) => {
+  fail(error.stack ?? error.message);
+  process.exit(1);
+});

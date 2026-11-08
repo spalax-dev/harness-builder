@@ -1,0 +1,55 @@
+# harness-builder: format/lint/structure ignore lines
+# Append the relevant lines to .prettierignore and .eslintignore, and to the
+# harness structure walk's ignoreDirs.
+# For git, use assets/gitignore.tmpl and read assets/GIT_TRACKING.md — the
+# formatter/linter ignore list is not automatically the git ignore list.
+# Keep generated/vendor output out of every gate; otherwise lint/format/structure
+# will scan files nobody owns and the harness becomes slow and noisy.
+
+# Dependencies and package-manager output
+node_modules/
+.pnpm-store/
+.yarn/
+vendor/
+
+# Build output
+dist/
+build/
+out/
+.next/
+.nuxt/
+.svelte-kit/
+.output/
+target/
+bin/
+obj/
+
+# Framework caches
+.angular/
+.turbo/
+.nx/
+.cache/
+.parcel-cache/
+.vite/
+coverage/
+.nyc_output/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.tox/
+site/
+
+# Go / Rust
+*.test
+*.out
+
+# Harness and editor noise
+.harness-cache/
+*.log
+.DS_Store

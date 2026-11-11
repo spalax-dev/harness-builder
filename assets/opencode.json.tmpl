@@ -33,5 +33,21 @@
       "*wget * | bash*": "deny",
       "*chmod -R 777*": "deny"
     }
+  },
+  "agent": {
+    "main-orchestrator": {
+      "permission": {
+        "edit": "allow",
+        "task": "allow",
+        "webfetch": "deny"
+      }
+    },
+    "task-executor": {
+      "permission": {
+        "edit": "allow",
+        "task": "deny",
+        "webfetch": "deny"
+      }
+    }
   }
 }

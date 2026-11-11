@@ -1,0 +1,79 @@
+<!--
+  architecture.md.tmpl → docs/planning/architecture.md
+
+  The C4 narrative. Keep the diagrams in docs/planning/c4/ and the flows in
+  docs/planning/sequences/. This document explains the system, the layers and
+  the rules that keep it coherent.
+
+  Replace: {{PROJECT_NAME}}, {{STACK}}, {{SYSTEM_PURPOSE}}, {{LAYERS_TABLE}},
+  {{DATA_STORES}}, {{CROSS_CUTTING}}, {{EXTERNAL_SYSTEMS}}.
+-->
+
+# Architecture
+
+> The shape of {{PROJECT_NAME}}: context, containers, components and the rules
+> that hold them together.
+
+## 1. System context
+
+{{PROJECT_NAME}} is {{SYSTEM_PURPOSE}}. It is used by {{ACTORS}} and depends on
+{{EXTERNAL_SYSTEMS}}.
+
+Diagram: `docs/planning/c4/context.puml`.
+
+| External system | Purpose | Failure behavior |
+| --------------- | ------- | ---------------- |
+| {{SYSTEM}}      | {{WHY}} | {{WHAT_HAPPENS_WHEN_DOWN}} |
+
+## 2. Containers
+
+Diagram: `docs/planning/c4/container.puml`.
+
+| Container     | Technology | Responsibility            |
+| ------------- | ---------- | ------------------------- |
+| {{CONTAINER}} | {{STACK}}  | {{RESPONSIBILITY}}        |
+
+Rules:
+
+- A container owns its data; no container reaches into another's database.
+- Synchronous calls have a timeout and a documented failure mode.
+- Cross-container contracts live in `docs/planning/contracts.md`.
+
+## 3. Components
+
+Diagram: `docs/planning/c4/component.puml`.
+
+The application is split into layers. Dependencies flow inward.
+
+| Layer            | Contains                       | May import from          |
+| ---------------- | ------------------------------ | ------------------------ |
+| {{LAYER}}        | {{CONTENTS}}                   | {{ALLOWED_DEPENDENCIES}} |
+
+Rules:
+
+- No cycles between layers.
+- Domain logic does not import transport or persistence frameworks.
+- I/O lives at the boundary, not inside pure logic.
+- A new layer needs an ADR.
+
+## 4. Data
+
+{{DATA_STORES}}
+
+- Every persisted entity has an explicit schema and a migration policy.
+- Migrations are forward-only and reviewed with the story that introduces them.
+- No production data in tests; use fixtures.
+
+## 5. Cross-cutting concerns
+
+{{CROSS_CUTTING}}
+
+Consider, at minimum: configuration, secrets, logging, error taxonomy,
+observability, authentication, authorization, rate limits and backups. Write the
+decision or link the ADR that holds it.
+
+## 6. Decisions
+
+Architecture decisions live in `docs/planning/adr/`. This document describes the
+current state; the ADRs record why it changed. If a story changes the
+architecture, it must update this document and add an ADR in the same activity.

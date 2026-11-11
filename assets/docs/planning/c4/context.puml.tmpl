@@ -1,0 +1,13 @@
+@startuml
+!include <C4/C4_Context>
+
+title {{PROJECT_NAME}} — System Context
+
+Person(user, "{{PRIMARY_ACTOR}}", "{{ACTOR_DESCRIPTION}}")
+System(system, "{{PROJECT_NAME}}", "{{SYSTEM_DESCRIPTION}}")
+System_Ext(external, "{{EXTERNAL_SYSTEM}}", "{{EXTERNAL_DESCRIPTION}}")
+
+Rel(user, system, "{{USER_INTERACTION}}")
+Rel(system, external, "{{SYSTEM_INTERACTION}}", "{{PROTOCOL}}")
+
+@enduml

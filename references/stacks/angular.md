@@ -18,8 +18,9 @@ pnpm). Use this table when the target project is Angular; otherwise use
 | test full   | `pnpm run test:ci` (`ng test --watch=false`) + `pnpm run test:tunelesctl`           |
 | test target | `pnpm exec ng test --watch=false --include=<spec>` + `pnpm exec vitest run <spec>`  |
 | contract    | inspect `dist/tuneles/**/*.css` for `@theme` tokens, fonts and radii                |
+| docsgen     | `pnpm exec compodoc -p tsconfig.app.json -d docs/api`                                |
 | structure   | `src/app` tree rules + CLI package rules                                            |
-| docs        | `docs/harness/architecture.md` is not a placeholder                                 |
+| docs        | `docs/planning/*` and `docs/harness/*` are not placeholders                          |
 
 ## Structure rules (canonical)
 
@@ -53,14 +54,16 @@ The canonical contract gate reads the emitted CSS and asserts:
 Run it **after** `ng build`. If the build is skipped, skip the contract check
 and say so; never read a stale `dist/`.
 
-## Modes in this stack
+## Steps in this stack
 
-- `--fast`: changed Prettier/ESLint + `src/app`/CLI structure + docs.
-- `--changed`: light/medium from git; affected package `tsc`; targeted app/CLI
-  specs.
-- `--for-task`: type-derived level. `feat`/`refactor`/breaking → full.
-- `--dev-build`: `ng build --configuration development` for a faster CSS/emit
-  check; production budgets are not validated.
+- `--fast`: changed Prettier/ESLint + `src/app`/CLI structure.
+- Iteration: + affected `tsc` + targeted app/CLI specs.
+- `--activity`: + Compodoc + `touches` check.
+- `--story`: all gates + `ng build` + both suites + Compodoc + user approval.
+- No reviewer role: the user approves the story plan and the finished story.
+
+Docblocks are enforced by ESLint (`eslint-plugin-jsdoc` for exported symbols);
+Compodoc publishes them. Generated docs are ignored by git.
 
 ## Measured budget (canonical repo)
 
@@ -68,9 +71,8 @@ and say so; never read a stale `dist/`.
 | ------------------------------------------------- | -------------: |
 | `harness:fast` (no changes)                       |         0.21 s |
 | `harness:fast` (42 changed files)                 |         4.76 s |
-| light `--for-task`                                |         5.78 s |
-| `harness:changed` (42 files, 3 tsc, 14 CLI specs) |        13.99 s |
-| full `--for-task`                                 |        91.40 s |
+| iteration with 42 files, 3 tsc, 14 CLI specs      |        13.99 s |
+| full `--story`                                    |        91.40 s |
 | full default                                      | 98.26–104.35 s |
 
 Targeted app leaf spec: ~5.5–8.3 s. The `src/app/app.spec.ts` token contract is

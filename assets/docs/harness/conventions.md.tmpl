@@ -2,12 +2,12 @@
   conventions.md.tmpl → docs/harness/conventions.md
 
   Replace: {{LANGUAGE}}, {{FORMATTER}}, {{LINTER}}, {{FORMAT_CMD}},
-  {{LINT_CMD}}, {{MAX_LINE}}.
+  {{LINT_CMD}}, {{MAX_LINE}}, {{SOURCE_DIR}}.
 -->
 
 # Conventions
 
-> Style rules, naming and structure. Follow exactly.
+> Style, naming, docstrings and decision records. Follow exactly.
 
 ---
 
@@ -17,17 +17,12 @@
 - **{{FORMATTER}}** owns formatting; **{{LINTER}}** owns quality and types.
 - No `any`/`unknown` leaks across a public API unless documented.
 - No dead code, unused imports or unused variables.
-- No `console.log`/debug leftovers.
+- No debug output (`console.log`, prints, `dbg!`).
 - No TODOs without context (owner + why + next step).
 - {{MAX_LINE}} line width unless the formatter config says otherwise.
 
-### 1.1 Format and lint: zero tolerance
-
-- Format: `{{FORMAT_CMD}}`.
-- Lint: `{{LINT_CMD}}` with zero warnings.
-- Green on both is the definition of **clean code**.
-- Never disable a rule ad-hoc. If a rule must be relaxed, change the config,
-  add a comment, and document it in this section.
+Format: `{{FORMAT_CMD}}`. Lint: `{{LINT_CMD}}`, zero warnings. Never disable a
+rule ad hoc; change the config, document it here.
 
 ---
 
@@ -35,53 +30,93 @@
 
 | Element           | Convention           | Example                 |
 | ----------------- | -------------------- | ----------------------- |
-| Source file       | kebab-case           | `reading-panel.ts`      |
-| Type/class        | PascalCase           | `ReadingPanel`          |
-| Function/variable | camelCase            | `loadLibrary()`         |
+| Source file       | kebab-case           | `auth-service.ts`       |
+| Type/class        | PascalCase           | `AuthService`           |
+| Function/variable | camelCase            | `issueToken()`          |
 | Constant          | UPPER_SNAKE_CASE     | `MAX_RETRIES`           |
-| Test file         | colocated `*.spec.*` | `reading-panel.spec.ts` |
-| Feature folder    | kebab-case           | `reading-panel/`        |
+| Test file         | colocated spec       | `auth-service.spec.ts`  |
 
-Names state the contract. A reader should understand the purpose without
-opening the file.
+Names state the contract. A reader should understand the purpose without opening
+the file.
 
 ---
 
-## 3. Layout
+## 3. Docstrings — the documentation source
 
-- Source lives in `{{SOURCE_DIR}}`; docs in `docs/`; harness in `scripts/`.
-- Tests are colocated or in the documented test tree; do not mix both.
+The project's documentation is generated from code. That makes docstrings part
+of the build, not a courtesy.
+
+- Every exported symbol has a docstring: purpose, parameters, return value,
+  thrown/returned errors and one usage note when it is not obvious.
+- Document the **why** and the contract; do not restate the signature.
+- Keep them current in the same change that changes the behavior.
+- The linter enforces presence (`eslint-plugin-jsdoc`, Ruff `D` +
+  `pydoclint`, `#![warn(missing_docs)]` + `-D warnings`, `revive`, Checkstyle
+  Javadoc). If the rule is off, turn it on before claiming the policy.
+- Generated output is never edited by hand.
+
+Example (language-agnostic shape):
+
+```text
+/** Issues an access token for valid credentials.
+ *  @param credentials - email and plain password.
+ *  @returns token and expiry.
+ *  @throws InvalidCredentials when the pair does not match.
+ */
+```
+
+---
+
+## 4. Decision records (ADRs)
+
+- Any decision that changes the foundation, a contract or a flow gets an ADR in
+  `docs/planning/adr/`.
+- One decision per file, sequential numbering, indexed in `README.md`.
+- Write it in the activity's `DOCUMENT` step, before the implementation.
+- Update the affected planning document or PlantUML diagram in the same change.
+- A superseded ADR stays; it gets `status: superseded by NNNN`.
+
+A decision without an ADR is a future argument.
+
+---
+
+## 5. Layout
+
+- Source lives in `{{SOURCE_DIR}}`; planning docs in `docs/planning/`; harness
+  docs in `docs/harness/`; harness in `scripts/`.
+- Tests are colocated or in the documented test tree; never both.
 - Scripts are not part of the shipped artifact.
-- A new top-level folder requires an `architecture.md` update first.
+- A new top-level folder requires a `docs/planning/structure.md` update first.
 
 ---
 
-## 4. Imports and dependencies
+## 6. Imports and dependencies
 
-- Import direction: feature → shared/core → models/platform.
+- Direction: feature → shared → core → models.
 - No cycles.
-- No cross-package imports unless the package explicitly exports them.
-- Prefer the standard library and existing dependencies over new ones.
-- A new dependency needs a reason and a lockfile update.
+- No cross-package imports unless the package exports them.
+- Prefer the standard library and existing dependencies.
+- A new foundational dependency needs an ADR and a lockfile update.
 
 ---
 
-## 5. Errors and comments
+## 7. Errors and comments
 
 - Fail fast at boundaries; return typed errors for expected failures.
 - Do not swallow errors; log with context at the boundary.
 - Comments explain **why**, not what. Delete comments that restate the code.
-- Public API gets a short doc comment with contract and edge cases.
+- Public API errors are part of the contract; document them.
 
 ---
 
-## 6. Documentation
+## 8. Documentation map
 
-- `docs/harness/architecture.md` — layout and layers.
-- `docs/harness/structure.md` — where each file lives.
-- `docs/harness/development.md` — workflow.
+- `docs/planning/*` — product foundation (hand written).
+- `docs/harness/architecture.md` — how the harness works.
+- `docs/harness/development.md` — stages and story workflow.
 - `docs/harness/testing.md` — test policy.
-- `docs/harness/verification.md` — gates and levels.
+- `docs/harness/verification.md` — gates, steps, commands.
+- `docs/harness/structure.md` — where files live.
 - `docs/harness/CHECKPOINTS.md` — final state evaluation.
 
 Docs are part of the contract. If a change makes a doc wrong, the change is not

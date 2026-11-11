@@ -1,0 +1,56 @@
+<!--
+  overview.md.tmpl → docs/planning/overview.md
+
+  Replace every {{...}}. This is the product foundation, not a spec: what the
+  system is, for whom, and what it deliberately does not do. No implementation
+  details belong here.
+-->
+
+# {{PROJECT_NAME}} — Overview
+
+> The foundation document. Everything else in `docs/planning/` builds on this.
+
+## 1. What it is
+
+{{PROJECT_NAME}} is {{ONE_PARAGRAPH_DESCRIPTION}}. It exists so that
+{{PRIMARY_USER}} can {{PRIMARY_OUTCOME}} without {{CURRENT_PAIN}}.
+
+## 2. Who uses it
+
+| Actor          | Needs                                        |
+| -------------- | -------------------------------------------- |
+| {{ACTOR_1}}    | {{NEED_1}}                                   |
+| {{ACTOR_2}}    | {{NEED_2}}                                   |
+
+## 3. Goals
+
+- {{GOAL_1}}
+- {{GOAL_2}}
+- {{GOAL_3}}
+
+## 4. Non-goals
+
+- {{NON_GOAL_1}}
+- {{NON_GOAL_2}}
+
+A non-goal is a decision, not a backlog item. If it becomes one later, it enters
+`BACKLOG.md` as a story, not as an unannounced change.
+
+## 5. Success
+
+The foundation is successful when:
+
+- a new developer can explain the system after reading `docs/planning/`;
+- the first story can be decomposed without inventing architecture;
+- every contract between applications is written down.
+
+## 6. Glossary
+
+| Term        | Meaning                          |
+| ----------- | -------------------------------- |
+| {{TERM_1}}  | {{DEFINITION_1}}                 |
+| {{TERM_2}}  | {{DEFINITION_2}}                 |
+
+## 7. Open questions
+
+- {{FOUNDATION_QUESTION}}

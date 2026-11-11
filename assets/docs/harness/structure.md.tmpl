@@ -1,13 +1,15 @@
 <!--
-  structure.md.tmpl → docs/harness/structure.md (or components.md for a
-  component-based UI). Replace: {{SOURCE_DIR}}, {{TREE}}, {{FILE_SET}},
-  {{TEST_LOCATION}}.
+  structure.md.tmpl → docs/harness/structure.md
+
+  Where harness files live. Product code layout is in
+  docs/planning/structure.md; do not duplicate it here.
+
+  Replace: {{SOURCE_DIR}}, {{TREE}}, {{GENERATED_DOCS}}.
 -->
 
-# Structure
+# Harness Structure
 
-> Where every file lives, what belongs in each folder, and the process for
-> adding a new one.
+> Where every file lives, what belongs in each folder, and how to add one.
 
 ---
 
@@ -17,73 +19,75 @@
 {{TREE}}
 ```
 
-`{{SOURCE_DIR}}` holds production source. `{{TEST_LOCATION}}` holds tests.
-Generated output, dependencies and caches never live in source folders.
+| Path                          | Holds                                              |
+| ----------------------------- | -------------------------------------------------- |
+| `AGENTS.md`                   | Entry point and contract                           |
+| `BACKLOG.md`                  | User stories                                       |
+| `activities.json`             | Activities of the active story (local)             |
+| `.harness/state.json`         | Stage (tracked)                                    |
+| `.harness/schedule.json`      | Computed batches (local)                           |
+| `.harness/claims/`            | Active executor claims (local)                     |
+| `.harness/approvals.json`     | Recorded user approvals (local)                    |
+| `.opencode/agent/`            | Orchestrator and executor roles                    |
+| `.opencode/plugins/`          | `harness-guard.js` protocol enforcement             |
+| `docs/planning/`              | Foundation: overview, architecture, stack, C4, ADR |
+| `docs/harness/`               | How verification works                             |
+| `scripts/harness.mjs`         | Engine                                             |
+| `scripts/harness-lib.mjs`     | Pure scheduling/backlog logic                      |
+| `scripts/harness-lib.spec.mjs`| Engine logic tests                                 |
+| `scripts/build_harness.mjs`   | Bootstrap of local state                           |
+| `progress/current.md`         | Live session (local)                               |
+| `progress/history.md`         | Durable record (tracked)                           |
+| `progress/explore/`           | Research notes                                     |
+| `{{GENERATED_DOCS}}`          | Generated documentation site (build output)        |
+
+`{{SOURCE_DIR}}` is product code, documented in `docs/planning/structure.md`.
 
 ---
 
-## 2. What lives where
-
-| Folder                      | Holds                                   | Does not hold      |
-| --------------------------- | --------------------------------------- | ------------------ |
-| `{{SOURCE_DIR}}/<feature>/` | feature code + its test                 | shared utilities   |
-| `{{SOURCE_DIR}}/shared/`    | reusable, presentation-only code        | I/O, feature state |
-| `{{SOURCE_DIR}}/core/`      | services/clients, the only I/O boundary | UI code            |
-| `{{SOURCE_DIR}}/models/`    | pure types/interfaces                   | runtime behavior   |
-| `scripts/`                  | harness and tooling                     | shipped code       |
-| `docs/`                     | product and harness docs                | generated output   |
-
----
-
-## 3. File set
-
-{{FILE_SET}}
-
-A feature folder is self-contained: its source, test and optional styles live
-together. A shared unit has exactly the files the project documents — no
-orphans, no extra variants.
-
----
-
-## 4. Dependency direction
+## 2. Dependency direction
 
 ```text
-feature → shared/core → models/platform
+BACKLOG.md  ->  activities.json  ->  schedule  ->  executors  ->  gates
 ```
 
-- Shared code never imports a feature.
-- Models import nothing from the UI or I/O layers.
-- No cycles.
-- Cross-package imports are forbidden unless the package exports them.
+- `BACKLOG.md` is user-owned.
+- `activities.json` is derived from one story and is orchestrator-owned.
+- The schedule is computed, never hand written.
+- Executors only write inside their `touches`.
+- Gates prove the result.
 
 ---
 
-## 5. Adding a new file or folder
+## 3. Adding a file
 
-1. **Docs** — update `architecture.md` and this file first.
-2. **Test** — add the spec/contract test.
-3. **Implement** — create the file in its documented home.
-4. **Verify** — run the task level; structure and tests must pass.
+| File kind                | Home                    | Rule                                      |
+| ------------------------ | ----------------------- | ----------------------------------------- |
+| Harness command          | `scripts/harness.mjs`   | Add the flag to `printHelp` and the tests |
+| Pure logic               | `scripts/harness-lib.mjs` | Unit test in the spec file first        |
+| Orchestrator behaviour   | `.opencode/agent/main-orchestrator.md` | Keep state ownership rules        |
+| Executor behaviour       | `.opencode/agent/task-executor.md` | Keep the document/test/implement loop |
+| Planning artifact        | `docs/planning/`        | Update `BACKLOG.md`? No: stories only      |
+| Decision                 | `docs/planning/adr/`    | One decision, indexed                     |
 
-If the file does not fit an existing folder, the architecture is wrong, not the
-folder.
+If a file does not fit, the structure is wrong, not the folder.
 
 ---
 
-## 6. Definition of done
+## 4. Forbidden
+
+- A hand-written feature spec next to the code (docstrings are the source).
+- Generated docs edited by hand or committed.
+- State files written by an executor.
+- A second harness entry point.
+- A batch executed serially.
+- A story closed without recorded approval.
+
+---
+
+## 5. Definition of done
 
 - [ ] The file lives in its documented home.
-- [ ] The sibling spec exists and asserts behavior.
-- [ ] No forbidden pattern or naming violation.
-- [ ] The task level is green.
+- [ ] The engine change has a unit test.
 - [ ] The docs that describe the tree are still true.
-
----
-
-## 7. Anti-patterns
-
-- A new top-level folder invented mid-task.
-- A shared component that calls a service.
-- A model that imports a framework.
-- A test in a separate tree when the project uses colocated specs.
-- A generated file committed into source.
+- [ ] `node --test scripts/harness-lib.spec.mjs` is green.

@@ -1,0 +1,16 @@
+@startuml
+!include <C4/C4_Component>
+
+title {{PROJECT_NAME}} — Components ({{CONTAINER}})
+
+Container_Boundary(container, "{{CONTAINER}}") {
+  Component(entrypoint, "{{ENTRYPOINT}}", "{{ENTRYPOINT_TECH}}", "{{ENTRYPOINT_RESPONSIBILITY}}")
+  Component(domain, "{{DOMAIN}}", "{{DOMAIN_TECH}}", "{{DOMAIN_RESPONSIBILITY}}")
+  Component(repository, "{{REPOSITORY}}", "{{REPOSITORY_TECH}}", "{{REPOSITORY_RESPONSIBILITY}}")
+}
+
+Rel(entrypoint, domain, "Calls")
+Rel(domain, repository, "Uses")
+Rel(repository, db, "Persists")
+
+@enduml

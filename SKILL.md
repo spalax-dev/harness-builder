@@ -1,485 +1,602 @@
 ---
 name: harness-builder
 description: >-
-  Build or redesign a repository verification harness with task-scoped levels
-  (light/medium/full), --for-task/--explain/--fast/--changed modes, targeted
-  changed-file tests, selective reviewer policy, and copy-paste templates.
-  Use when a project needs fast quality gates, CI/pre-commit verification, or
-  when every change currently runs the full suite. Stack-agnostic: detects
-  Node/TypeScript, Angular/React/Vue/Svelte, Python, Rust, Go and monorepos,
-  and adapts the gate commands instead of assuming one framework.
+  Build, redesign or upgrade a two-stage repository harness: PLANNING
+  (foundation docs, C4/PlantUML, stack, contracts, coarse user stories in
+  BACKLOG.md) then DEVELOPMENT (stories derived into activities, parallel
+  batches by dependency and touches, documentation-in-code, story-scoped TDD,
+  user approval instead of an agent reviewer). Includes an upgrade path for
+  harnesses already installed. Use when a project needs fast quality gates, a
+  documentation generator, parallel agent execution, or when every change
+  currently runs the full suite. Stack-agnostic: Node/TypeScript,
+  Angular/React/Vue/Svelte, Python, Rust, Go and monorepos.
 ---
 
 # Harness Builder
 
-Build a verification harness that is **fast for small tasks, strict for risky
-ones, and honest about what it did not check**. The harness is an enforcement
-layer for the project's own rules; it does not invent policy.
+Build a verification harness that is **stage-correct, story-driven, honest about
+what it did not check, and impossible to run serially when the work allows
+parallelism**.
 
-Use the canonical `tuneles` harness as the reference implementation, but do not
-copy its project-specific rules (Angular structure, Tailwind tokens, CLI layout)
-unless the target project already has equivalent rules.
-
-A harness is not just the script. It is the **agent contract**: an entry point
-(`AGENTS.md`), roles (`.opencode/agent/*`), a session tracker (`progress/`),
-durable docs (`docs/harness/*`) and a tracked-vs-ignored policy. The engine is
-maybe half the work; the contract is what makes it usable by another agent.
+The harness is an enforcement layer for the project's own rules. It does not
+invent policy.
 
 ---
 
 ## 1. When to build a harness — and when not to
 
 Build one when **at least three gates carry independent signal** and a full run
-costs more than a coffee-break edit loop. A useful heuristic:
+costs more than an edit loop:
 
-- The project has a formatter/linter, a compiler or type checker, a build, and
-  a test suite; any three of those catches a different class of failure.
-- The full run is slower than ~20 s, or developers repeatedly skip it.
-- Changes are frequent enough that running everything every time wastes more
-  than the harness costs to build.
+- formatter/linter, compiler/type checker, build, tests: any three catch
+  different failure classes;
+- the full run is slower than ~20 s, or developers skip it;
+- changes are frequent enough that running everything every time costs more than
+  the harness.
 
 Do **not** build one when:
 
-- The project is a three-file script with one test command. A single `npm test`
-  is already the harness.
-- The full run is under ~10 s and stable. Optimize later, when it hurts.
-- There is no agreed definition of done. A harness cannot enforce a policy that
-  does not exist; write the docs first.
-- You only need a one-off check. Put it in a script, not in a gate.
+- the project is a three-file script with one test command;
+- the full run is under ~10 s and stable;
+- there is no agreed definition of done — write the foundation first;
+- you only need a one-off check.
 
-A harness has a cost: config maintenance, stack detection, and false positives.
-Start with the smallest gate set that catches real regressions.
-
----
-
-## 2. Philosophy: `docs → test → implement`, applied to every gate
-
-A gate is only legitimate when it verifies a documented expectation.
-
-| Phase         | Gate family                      | What it validates                                       |
-| ------------- | -------------------------------- | ------------------------------------------------------- |
-| **docs**      | `docs`, `structure`              | The project's own rules exist and are not placeholders  |
-| **test**      | `format`, `lint`, `type`, `test` | The code is well-formed, typed and behaviorally covered |
-| **implement** | `build`, `contract`              | The artifact exists and matches its public contract     |
-
-Do not add a gate because “it is standard”. Add it because a failure would
-catch a bug the other gates miss. Remove it when it only duplicates another
-gate or when its output is ignored.
-
-### Gate selection table
-
-| Gate        | Keep when                                              | Drop when                                             |
-| ----------- | ------------------------------------------------------ | ----------------------------------------------------- |
-| `format`    | The team wants deterministic diffs                     | No formatter, or formatting is intentionally free     |
-| `lint`      | Rules catch real defects or forbidden patterns         | The linter is a style duplicate of the formatter      |
-| `type`      | The language has a checker and public contracts        | The project has no types or the checker is unreliable |
-| `build`     | The shipped artifact can break independently of tests  | The app is interpreted and has no build step          |
-| `test`      | There is behavior worth protecting                     | There are no tests yet (write them first)             |
-| `contract`  | The artifact has a public shape (CSS, exports, schema) | Nothing consumes the artifact                         |
-| `structure` | The tree/naming is a documented contract               | The layout is intentionally free-form                 |
-| `docs`      | Docs are the source of truth and can go stale          | There are no maintained docs                          |
-
-A gate with no owner and no failure story is noise. Delete it.
+A harness has a cost: maintenance, stack detection, false positives, and the
+discipline of the contract. Start with the smallest gate set that catches real
+regressions.
 
 ---
 
-## 2.5 The agent contract (not just the engine)
+## 2. Philosophy: two exclusive stages
 
-A harness script is only the execution layer. Another agent cannot use it
-consistently without an entry point, roles, a tracker and durable docs.
+The harness enforces a one-way transition:
 
-Ship these together:
-
-| File / folder                                | Responsibility                                                                                            |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `AGENTS.md`                                  | Entry point: repo map, stack, hard rules, verification levels, activity schema, delegation, session close |
-| `.opencode/agent/main-orchestrator.md`       | Planning, decomposition, delegation, session close                                                        |
-| `.opencode/agent/task-executor.md`           | One-task implementation, test-first                                                                       |
-| `.opencode/agent/implementation-reviewer.md` | Full-level validation at activity close                                                                   |
-| `opencode.json` (optional)                   | Shared permissions/safety denies                                                                          |
-| `progress/current.md`                        | Live session: activity, task, plan, notes, blockers                                                       |
-| `progress/history.md`                        | Durable append-only session record                                                                        |
-| `progress/explore/`                          | Sub-agent research notes (kept with `.gitkeep`)                                                           |
-| `docs/harness/architecture.md`               | Layout, layers, state, gates                                                                              |
-| `docs/harness/conventions.md`                | Format/lint split, naming, imports, errors                                                                |
-| `docs/harness/structure.md`                  | Where every file lives and how to add one                                                                 |
-| `docs/harness/development.md`                | `docs → test → implement` workflow                                                                        |
-| `docs/harness/testing.md`                    | Mutation mindset, test-first, assertions, mocking                                                         |
-| `docs/harness/verification.md`               | Levels, gate matrix, docs/tests per type                                                                  |
-| `docs/harness/CHECKPOINTS.md`                | Final state evaluation                                                                                    |
-
-The contract is what lets a cold agent answer three questions without guessing:
-
-1. **What do I run now?** → `--for-task`, `--fast`, full at close.
-2. **Where does this file live?** → `structure.md` + `architecture.md`.
-3. **When is it done?** → `verification.md` + `CHECKPOINTS.md`.
-
-If you ship the engine without this layer, the next agent will invent its own
-workflow and the gates will drift.
-
----
-
-## 3. Gate architecture
-
-### Gate types
-
-- **docs** — required docs exist and meet a minimum content threshold.
-- **structure** — required dirs/files, forbidden patterns, max file size,
-  naming rules. Cheap, always on.
-- **lint** — static rules and forbidden patterns.
-- **type** — compiler/type checker; can be split per package.
-- **build** — production artifact.
-- **test** — full suite or targeted specs.
-- **contract** — artifact assertions that only make sense **after** a build.
-
-### Levels
-
-| Level    | Intent                                       | Typical gates                                               |
-| -------- | -------------------------------------------- | ----------------------------------------------------------- |
-| `light`  | docs/config/chore loop                       | changed format/lint + structure/docs + harness self-test    |
-| `medium` | behavior change without public contract risk | + affected type check + targeted specs                      |
-| `full`   | feature/refactor/breaking, activity close    | all gates, production build, contract after build, reviewer |
-| `none`   | explicit escape hatch                        | every gate skipped; document why it was used                |
-
-### Modes
-
-| Mode          | One-line behaviour                                                    |
-| ------------- | --------------------------------------------------------------------- |
-| default       | full, every configured gate (final gate)                              |
-| `--for-task`  | resolve the task type to a level and run only that level              |
-| `--explain`   | print level + gate set, run no gate                                   |
-| `--fast`      | changed-file iteration: no type/build/test/contract                   |
-| `--changed`   | auto light/medium from changed files; targeted tests                  |
-| `--dev-build` | development build for faster artifact checks; not a full substitute   |
-| `--skip-*`    | escape individual gates; print a warning when a “full” run is reduced |
-
-The modes are not cosmetic. They are the difference between a 5 s edit loop and
-a 2 min loop.
-
----
-
-## 4. Stack detection
-
-Read the manifests before writing any command. Do not hardcode a stack.
-
-| Signal file                                                             | Stack / tooling clue                                      |
-| ----------------------------------------------------------------------- | --------------------------------------------------------- |
-| `package.json`                                                          | Node/JS/TS; inspect `scripts`, `dependencies`, `type`     |
-| `pnpm-lock.yaml` / `package-lock.json` / `yarn.lock` / `bun.lockb`      | package manager                                           |
-| `angular.json`                                                          | Angular; use `ng` targets                                 |
-| `vite.config.*` / `next.config.*` / `svelte.config.*` / `nuxt.config.*` | React/Vue/Svelte/Next/Nuxt + Vite                         |
-| `tsconfig.json`                                                         | TypeScript; check `noEmit`, project references            |
-| `pyproject.toml` / `requirements.txt` / `poetry.lock` / `uv.lock`       | Python + tool runner                                      |
-| `Cargo.toml`                                                            | Rust; `cargo fmt/clippy/test/build`                       |
-| `go.mod`                                                                | Go; `gofmt`/`go vet`/`go test`/`go build`                 |
-| `Makefile` / `justfile`                                                 | Project-owned commands; prefer them over guessed binaries |
-| `biome.json` / `.eslintrc*` / `ruff.toml`                               | Formatter/linter choice                                   |
-| `vitest.config.*` / `jest.config.*` / `pytest.ini`                      | Test runner                                               |
-
-### Stack → gate command table
-
-| Gate        | Node/TS (pnpm example)                        | Angular (this repo)                                     | Python (uv example)                       | Rust                          | Go                  |
-| ----------- | --------------------------------------------- | ------------------------------------------------------- | ----------------------------------------- | ----------------------------- | ------------------- |
-| format      | `pnpm exec prettier --check .`                | `pnpm exec prettier --check .`                          | `uv run ruff format --check .`            | `cargo fmt -- --check`        | `gofmt -l .`        |
-| lint        | `pnpm exec eslint . --max-warnings 0`         | `pnpm exec eslint . --max-warnings 0`                   | `uv run ruff check .`                     | `cargo clippy -- -D warnings` | `go vet ./...`      |
-| type        | `pnpm exec tsc --noEmit`                      | app+spec+CLI `tsc -p ...`                               | `uv run mypy .` / `pyright`               | `cargo check`                 | `go build ./...`    |
-| build       | `pnpm run build`                              | `pnpm run build` (`ng build`)                           | `uv build`                                | `cargo build --release`       | `go build ./...`    |
-| test full   | `pnpm run test:ci`                            | `pnpm run test:ci` + `test:tunelesctl`                  | `uv run pytest -q`                        | `cargo test`                  | `go test ./...`     |
-| test target | `pnpm exec vitest run <spec>`                 | `ng test --watch=false --include=<spec>` + `vitest run` | `uv run pytest <spec>`                    | `cargo test <name>`           | `go test ./pkg/...` |
-| contract    | emitted CSS/exports/bundle check              | Tailwind `@theme` tokens in `dist` CSS                  | `python -c "import pkg"` / wheel contents | binary/feature check          | binary/API check    |
-| structure   | dirs, forbidden patterns, component file sets | `src/app` tree + `tunelesctl` rules                     | `src/<pkg>` layout, no `__pycache__`      | module layout, no `unsafe`    | package layout      |
-
-For the full command details, read:
-
-- `references/stacks/angular.md` — derived from the canonical repo.
-- `references/stacks/node.md` — Node/TS, React/Vue/Svelte, monorepos.
-- `references/stacks/python.md` — uv/poetry/pip, ruff/black, mypy/pyright, pytest.
-
-### Detection rules
-
-1. Prefer project-owned scripts (`package.json` scripts, `Makefile`,
-   `pyproject.toml` tasks) over guessed binaries.
-2. Detect the package manager from the lockfile; keep one manager per repo.
-3. Split full type checks per package when the project has independent
-   packages; otherwise one check is enough.
-4. Use the test runner the project already uses. Do not introduce a second one.
-5. If a gate command is missing, set it to `null` and print `[SKIP] gate: not
-configured`; never invent a command that might silently pass.
-
----
-
-## 5. Performance rules
-
-These come from the canonical repo and its measured runs.
-
-1. **Use async `spawn` + `Promise`, never `spawnSync` in a loop.**
-   Independent gates should overlap. The canonical full run was 118.65 s with
-   sequential `spawnSync`; the documented parallelization target is 70–85 s
-   (`docs/harness/verification.md` §5). App tests alone are ~51 s, so no
-   harness can go below that without splitting the test suite.
-2. **Parallelize independent gates with `Promise.all`.** Format, lint and type
-   are independent. Build and tests are independent unless the tests consume
-   the build artifact.
-3. **Serialize only real dependencies.** A contract check that reads `dist/`
-   runs after the build. A migration check runs after the schema gate. Do not
-   serialize “just in case”.
-4. **Cache directory walks.** Structure and spec discovery walk the tree; walk
-   once per run and reuse the list.
-5. **Filter changed files before spawning.** A changed-file Prettier/ESLint run
-   on 2 files is seconds; on 500 files it is the full gate.
-6. **Verify ignore files first.** If `node_modules/`, `dist/`, `.venv/`,
-   `target/` are not ignored, every gate scans generated output.
-7. **Use modes, not discipline.** The harness should make the fast path the
-   easy path: `--fast` for iteration, `--for-task` for done, full at close.
-8. **Measure before optimizing further.** A leaf app spec is ~5–8 s; the root
-   contract spec can be ~23 s because it imports the whole app. Optimize the
-   hot spec, not the whole harness.
-
----
-
-## 6. Workflow rules
-
-Extracted from `AGENTS.md` and the canonical activity history.
-
-### The verification ladder
-
-| Step | Action                                                   | Cost     |
-| ---- | -------------------------------------------------------- | -------- |
-| 0    | Read the file, its sibling spec and the task type        | 0 s      |
-| 1    | `--fast` after a meaningful edit                         | 3–8 s    |
-| 1.5  | Targeted spec when a failure names a file                | 3–15 s   |
-| 2    | `--for-task <ref>` when the task is done                 | 5–100 s  |
-| 3    | Full at activity close + reviewer when the level is full | 90–120 s |
+| Stage         | Purpose                                   | Produces                                                  |
+| ------------- | ----------------------------------------- | --------------------------------------------------------- |
+| `planning`    | Decide the foundation                     | overview, architecture, stack + ADRs, structure, contracts, C4, sequences, BACKLOG |
+| `development` | Build the stories                         | code, tests, docstrings, generated docs, ADRs caused by real decisions |
 
 Rules:
 
-- **Never run full after every edit.** It is the most common way to make a
-  harness hated and ignored.
-- **Budget ≤2 full runs per activity.** A third needs a concrete reason.
-- **Do not edit while the harness runs.** Captured output and partial files
-  produce confusing failures.
-- **Reviewer only at activity close**, only for full-level activities. The
-  reviewer needs the whole change, not a partial one.
-- **Run the task's level, not the activity's maximum**, during iteration.
-- **One task at a time**; parallel tasks only inside one activity.
-- **Document in the session file while working**, not after.
+1. **No code, no tests in planning.** Implementation is locked, mechanically.
+2. **You cannot go back.** Planning artifacts stay editable in development; the
+   stage does not move backwards. There is no "re-plan" phase.
+3. **The stage is a project decision, tracked in git** (`.harness/state.json`),
+   not session noise.
+4. **Planning is never the end state.** It exists to be approved and left.
 
-### Reviewer policy
+This is not TDD for the whole repository. It is:
 
-- `feat`, `refactor`, `breaking: true` → full → reviewer at close.
-- `fix`, `perf`, `test` → medium → no reviewer.
-- `chore`, `docs`, `style`, `ci`, `build` → light → no reviewer.
-- A full activity with no reviewer task gets a warning, not a hard failure.
-- The reviewer task should come after implementation tasks; warn if it is first.
-
----
-
-## 7. Task-type-aware levels
-
-Level mapping:
-
-| Type                                        | Level  | Why                                                               |
-| ------------------------------------------- | ------ | ----------------------------------------------------------------- |
-| `feat`                                      | full   | New behavior and public surface; the whole artifact matters       |
-| `refactor`                                  | full   | Behavior must not change; tests and types are the proof           |
-| `fix` + `breaking: true`                    | full   | The contract breaks; specs and docs must move with it             |
-| `fix` / `perf` / `test`                     | medium | Behavior changes locally; affected type + targeted specs suffice  |
-| `chore` / `docs` / `style` / `ci` / `build` | light  | No runtime behavior; changed format/lint + structure/docs suffice |
-| `verification: "none"`                      | none   | Explicit escape hatch; every gate skipped, document why           |
-
-Fallback:
-
-```text
-task.type ?? activity.type ?? 'medium'
+```
+PLANNING  -> foundation, coarse stories
+DEVELOPMENT:
+  story selected
+    -> activities derived just-in-time
+      -> DOCUMENT (decision + docstrings)
+        -> TEST (story-scoped, must fail)
+          -> IMPLEMENT
+            -> verify
+              -> user approves
 ```
 
-Why `medium` and not `light`: a false green is worse than a false red. Do not
-migrate historical activities just to add `type`; the fallback is deliberate
-and silent. New tasks should type every task.
+### Why no global TDD
 
-`breaking` is a boolean flag, not a type. Convention: `fix` + `breaking` →
-`fix!`; `feat` + `breaking` → `feat!`.
+Upfront specs fail when the user does not yet know what they want. A coarse
+story plus a just-in-time decomposition is more honest than 80 activities written
+before the first conversation. Inside the selected story, TDD is strict: the
+tests activity precedes the implementation activity.
+
+### Documentation as a system, not specs
+
+- Planning docs describe the foundation and stay editable.
+- In-code docstrings are the source of truth for what exists.
+- A documentation generator is **mandatory**: the harness refuses to leave
+  planning without one, and runs it at activity/story close.
+- No standalone markdown feature specs. A decision becomes an ADR; behavior
+  becomes docstrings; the generator publishes them.
 
 ---
 
-## 8. Using the assets
+## 3. The agent contract
+
+The engine is only half the harness. Ship the contract with it:
+
+| File / folder | Responsibility |
+| --- | --- |
+| `AGENTS.md` | Entry point: stage, map, hard rules, workflow, approvals |
+| `.opencode/agent/main-orchestrator.md` | Stage work, story decomposition, batch scheduling, state ownership |
+| `.opencode/agent/task-executor.md` | One activity: claim, document, test, implement, report |
+| `.opencode/plugins/harness-guard.js` | Mechanical enforcement of planning lock, batch claims and `touches` |
+| `opencode.json` (optional) | Shared permissions/safety denies |
+| `BACKLOG.md` | User stories (user-owned, coarse) |
+| `activities.json` | Activities of the selected story (local) |
+| `.harness/state.json` | Stage (tracked) |
+| `progress/current.md` | Live session |
+| `progress/history.md` | Durable record (tracked) |
+| `progress/explore/` | Research notes |
+| `docs/planning/*` | Foundation documents and diagrams |
+| `docs/harness/*` | How verification and the harness work |
+
+There is **no reviewer role**. Review is the user's job, at two explicit
+checkpoints:
+
+1. **Plan approval** — after activities are derived, before execution.
+2. **Story approval** — after the full gate is green, before `done`.
+
+A cold agent must answer three questions without guessing:
+
+1. *Where am I?* → `--stage`.
+2. *What do I run now?* → `--fast`, `--schedule`, `--activity`, `--story`.
+3. *When is it done?* → `verification.md` + the approval protocol.
+
+---
+
+## 4. Work model: stories → activities → tasks
+
+`BACKLOG.md` is **not** replaced by activities. It is the source they come from.
+
+```
+BACKLOG.md                activities.json                 tasks
+user stories  --select--> activities (storyId)  -->  tasks (per activity)
+(coarse)                  (derived just-in-time)          (technical steps)
+```
+
+- 50 stories do not produce 80 activities. Only the selected story is decomposed.
+- An activity is a cohesive set of interrelated tasks, usually one technical
+  layer.
+- Activities are flat: each carries `storyId`. There is no nested story object.
+- `dependsOn` and `touches` make the plan schedulable.
+
+### Schema
+
+```json
+{
+  "activities": [
+    {
+      "id": "ACT-02",
+      "storyId": "US-003",
+      "name": "auth-contract",
+      "status": "pending",
+      "dependsOn": ["ACT-01"],
+      "touches": ["src/auth/http/", "docs/openapi/"],
+      "tasks": [
+        { "id": "T-01", "description": "Endpoints and error shapes in OpenAPI", "status": "pending" },
+        { "id": "T-02", "description": "Controller signatures with docstrings", "status": "pending" }
+      ]
+    }
+  ]
+}
+```
+
+- `storyId` — the only story link; must exist in `BACKLOG.md`.
+- `dependsOn` — `[]` means it can run in the next batch.
+- `touches` — required path prefixes; two activities in one batch must not
+  overlap.
+- `tasks` — at least one; the first task of every activity is its documentation
+  task.
+- No `type`, no `breaking`, no per-task verification level. The step decides the
+  gates.
+
+### Derivation example
+
+Story: *"As a user I want to log in"*:
+
+| Activity | Depends on | Touches | Tasks |
+| --- | --- | --- | --- |
+| data model | — | `src/auth/model/`, `db/migrations/` | docstrings, table, migration, repository interface |
+| contract | model | `src/auth/http/`, `docs/openapi/` | OpenAPI shape, controller signatures + docstrings, error catalog |
+| tests | contract | `src/auth/tests/` | happy path, invalid credentials, locked account, expiry |
+| implementation | tests | `src/auth/service/`, `src/auth/middleware/` | logic, token issuance, session, wiring |
+| integration | implementation | `db/`, `docs/` | migration run, docsgen, smoke |
+
+The tests activity precedes implementation: that is the story-scoped TDD.
+
+---
+
+## 5. Gate architecture
+
+### Planning gates
+
+| Gate | Proves |
+| --- | --- |
+| `planning-structure` | `docs/planning/{adr,c4,sequences}` exist |
+| `backlog` | `BACKLOG.md` parses, statuses valid, max 1 active |
+| `planning-docs` | overview, architecture, stack, structure, contracts, ADR index, diagrams exist and are not placeholders |
+| `puml` | every `.puml` has balanced `@startuml`/`@enduml` and content |
+| `docsgen-config` | a documentation generator is configured |
+
+No format/lint/type/test/build gate runs in planning. Development commands are
+rejected with `[BLOCKED]`, not silently skipped.
+
+### Development steps
+
+| Step | Command | Gates |
+| --- | --- | --- |
+| iteration | `--fast` | changed format/lint + structure |
+| iteration | default | + affected type + targeted tests + docs |
+| activity | `--activity ACT-x` | iteration + docsgen + `touches` diff check |
+| story | `--story US-x` | all gates + production build + contract + full tests + docsgen + approval |
+
+`touches` is a real gate: every changed file must be inside the union of the
+batch's declared prefixes (state files excluded). The plugin enforces the
+individual activity's scope at edit time; the harness catches stray edits at
+close. That is what makes parallel executors safe.
+
+### Exit codes
+
+- `0` green.
+- `1` failed.
+- `3` story gates green, **user approval missing**. This is a boundary, not a
+  bug.
+
+---
+
+## 6. Scheduling and forced parallelism
+
+`--schedule` computes batches:
+
+```
+ready(A)  = pending AND every dependsOn is done
+batch     = maximal conflict-free subset of ready (touches disjoint)
+```
+
+- Batches are sequential.
+- Activities inside a batch run in parallel.
+- A batch of N **must** run with N executors in one message.
+
+### How it is enforced, not suggested
+
+| Rule | Mechanism | Strength |
+| --- | --- | --- |
+| N activities → N agents | plugin blocks edits until the batch is fully claimed | hard |
+| Only the orchestrator writes state | agent permissions + plugin | hard |
+| Executors stay inside `touches` | harness diff gate + plugin | hard |
+| Dependency order | scheduler + claim rejection | hard |
+| No batch 2 before batch 1 is green | harness state machine | hard |
+| "Remember to parallelize" | `AGENTS.md` + executor prompt | procedural |
+
+Layer 1 — `AGENTS.md`:
+
+> If `--schedule` prints a batch of N activities, launch N `task-executor`
+> subagents in ONE message. A batch of N executed one-by-one is a protocol
+> violation.
+
+Layer 2 — OpenCode config: the orchestrator may `task`; the executor may not.
+
+Layer 3 — plugin `harness-guard.js`:
+
+- planning: rejects edits outside the foundation allowlist;
+- during a batch: rejects state writes and any path outside the union of claimed
+  `touches`;
+- if the batch is not fully claimed: rejects edits and names the missing
+  activities.
+
+Layer 4 — harness: `--claim` rejects an activity that is not ready or not in the
+current batch; `--activity` rejects changed files outside `touches`.
+
+Honest limit: an agent could still refuse to follow the schedule, but it cannot
+do the work: the plugin blocks the edits.
+
+---
+
+## 7. Stack detection and the documentation generator
+
+Read the manifests before writing commands:
+
+| Signal | Stack / clue |
+| --- | --- |
+| `package.json` | Node/JS/TS; inspect scripts, deps, type |
+| lockfiles | package manager |
+| `angular.json` | Angular |
+| `vite.config.*`, `next.config.*`, `svelte.config.*`, `nuxt.config.*` | React/Vue/Svelte/Next/Nuxt |
+| `tsconfig.json` | TypeScript |
+| `pyproject.toml`, `requirements.txt`, `uv.lock`, `poetry.lock` | Python + runner |
+| `Cargo.toml` | Rust |
+| `go.mod` | Go |
+| `Makefile`, `justfile` | project-owned commands |
+| `biome.json`, `.eslintrc*`, `ruff.toml` | formatter/linter |
+| `vitest.config.*`, `jest.config.*`, `pytest.ini` | test runner |
+
+### Gate → command
+
+| Gate | Node/TS | Angular | Python (uv) | Rust | Go |
+| --- | --- | --- | --- | --- | --- |
+| format | `prettier --check .` | `prettier --check .` | `ruff format --check .` | `cargo fmt -- --check` | `gofmt -l .` |
+| lint | `eslint . --max-warnings 0` | `eslint . --max-warnings 0` | `ruff check .` | `cargo clippy -- -D warnings` | `go vet ./...` |
+| type | `tsc --noEmit` | per-package `tsc -p` | `mypy`/`pyright` | `cargo check` | `go build ./...` |
+| build | `npm run build` | `ng build` | `uv build` | `cargo build --release` | `go build ./...` |
+| test | `npm test` | `ng test --watch=false` | `uv run pytest -q` | `cargo test` | `go test ./...` |
+| docsgen | `typedoc` | `compodoc` | `mkdocs build --strict` / `sphinx-build` | `cargo doc` | `go doc` / `pkgsite` |
+
+### Documentation generator per stack
+
+| Stack | Generator | Gate command |
+| --- | --- | --- |
+| TypeScript | TypeDoc | `npx typedoc` |
+| JS/TS + JSDoc | JSDoc + jsdoc2md | `npm run docs:gen` |
+| Angular | Compodoc | `npx compodoc -p tsconfig.json` |
+| Python | MkDocs + mkdocstrings, or Sphinx | `mkdocs build --strict` / `sphinx-build -b html` |
+| Rust | rustdoc | `cargo doc --no-deps` |
+| Go | godoc / pkgsite | `go doc ./...` |
+| Java/Kotlin | Javadoc / Dokka | `./gradlew dokkaHtml` |
+| C/C++ | Doxygen | `doxygen Doxyfile` |
+
+The generator is chosen in **planning**. `--start-dev` fails without one.
+
+### Detection rules
+
+1. Prefer project-owned scripts over guessed binaries.
+2. One package manager per repo, detected from the lockfile.
+3. Split type checks per package when packages are independent.
+4. Use the test runner the project already has; never add a second.
+5. Missing gate → `null` and `[SKIP]`; never invent a command that may pass
+   silently.
+
+---
+
+## 8. Performance rules
+
+1. **Async `spawn` + `Promise.all`**, never `spawnSync` in a loop. The canonical
+   repo went from 118.65 s to a documented 70–85 s target by parallelizing
+   independent gates.
+2. **Parallelize independent gates**; serialize only real dependencies
+   (`contract` after `build`).
+3. **Filter changed files before spawning.** Two changed files are seconds; five
+   hundred are the full gate.
+4. **Cache directory walks** for structure and spec discovery.
+5. **Ignore generated output first.** A gate that scans `dist/` is not a gate.
+6. **Use the steps, not discipline.** `--fast` for editing, `--activity` for
+   closing an activity, `--story` once for evidence.
+7. **One docsgen run per activity close**, not per save.
+8. **Measure before optimizing further.**
+
+---
+
+## 9. Workflow rules
+
+### The verification ladder
+
+| Step | Action | Cost |
+| --- | --- | --- |
+| 0 | Read the activity, its `touches` and the relevant planning docs | 0 s |
+| 1 | `--fast` after a meaningful edit | seconds |
+| 2 | `--activity` when the activity is done | targeted + docsgen |
+| 3 | `--story` at close, then user approval | full + build |
+
+Rules:
+
+- Never run `--story` after every edit.
+- Budget **≤2 story-level runs per story**: one for evidence, one after approval.
+- Do not edit while the harness runs.
+- Verify activities serially, after their executors return.
+- One batch at a time; one story at a time.
+- Document in `progress/current.md` while working.
+
+### Approval policy
+
+- The agent presents evidence; the user decides.
+- `--story` exits `3` without approval.
+- `--approve-story` requires the story to be `awaiting-approval` and `--by`.
+- No agent may mark `done` on its own. There is no reviewer role.
+
+### Documentation step
+
+Every activity's first task is documentation:
+
+- decision → ADR + affected planning doc/diagram;
+- new/changed public surface → docstrings in code;
+- no standalone markdown feature docs.
+
+The linter enforces docblock presence. If those rules are off, turn them on
+before claiming the documentation policy.
+
+---
+
+## 10. Using the assets
 
 Copy, do not reconstruct:
 
-| Asset                                | Copy to / use as                                                                              |
-| ------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `assets/AGENTS.md.tmpl`              | `AGENTS.md` (entry point)                                                                     |
-| `assets/AGENTS.verification.md.tmpl` | paste into `AGENTS.md` when you keep your own structure                                       |
-| `assets/opencode/agent/*.md.tmpl`    | `.opencode/agent/*.md` (orchestrator, executor, reviewer)                                     |
-| `assets/opencode.json.tmpl`          | `opencode.json` (optional safety/permissions config)                                          |
-| `assets/progress/current.md.tmpl`    | `progress/current.md`                                                                         |
-| `assets/progress/history.md.tmpl`    | `progress/history.md`                                                                         |
-| `assets/progress/explore/.gitkeep`   | `progress/explore/.gitkeep`                                                                   |
-| `assets/build_harness.mjs.tmpl`      | `scripts/build_harness.mjs`                                                                   |
-| `assets/docs/harness/*.md.tmpl`      | `docs/harness/*.md` (architecture, conventions, structure, development, testing, CHECKPOINTS) |
-| `assets/verification.md.tmpl`        | `docs/harness/verification.md`                                                                |
-| `assets/harness.mjs.tmpl`            | `scripts/harness.mjs`                                                                         |
-| `assets/harness-lib.mjs.tmpl`        | `scripts/harness-lib.mjs`                                                                     |
-| `assets/harness-lib.spec.mjs.tmpl`   | `scripts/harness-lib.spec.mjs`                                                                |
-| `assets/activities.schema.json`      | `activities.schema.json` (or merge into the repo)                                             |
-| `assets/package.scripts.json.tmpl`   | merge into `package.json` `scripts`                                                           |
-| `assets/GIT_TRACKING.md`             | `docs/harness/git-tracking.md`                                                                |
-| `assets/gitignore.tmpl`              | `.gitignore`                                                                                  |
-| `assets/ignores.txt`                 | append to `.prettierignore`, `.eslintignore` and the structure walk                           |
-
-### Filling `harness.mjs`
-
-Replace the `CONFIG` block. The shape is intentional:
-
-- `codeRoots` — changed files that select medium.
-- `testRoots` — roots searched for sibling specs (keep tooling out unless it
-  has colocated tests).
-- `docs` — required docs and minimum word counts.
-- `structure` — required dirs, forbidden patterns, max lines.
-- `specs` — sibling-spec discovery and targeted command.
-- `gates` — `format`, `lint`, `type`, `build`, `test`, `contract`.
-- `selfTest` — pure-logic test command; runs in light/medium only.
-
-Every gate has a `// GATE:` comment. Delete a gate from `CONFIG` if the stack
-has no equivalent; set it to `null` if it is optional. The template's example
-values are npm-based and intentionally runnable; replace them with the detected
-package manager and commands.
+| Asset | Copy to |
+| --- | --- |
+| `assets/AGENTS.md.tmpl` | `AGENTS.md` |
+| `assets/AGENTS.verification.md.tmpl` | paste into an existing `AGENTS.md` |
+| `assets/opencode/agent/main-orchestrator.md.tmpl` | `.opencode/agent/main-orchestrator.md` |
+| `assets/opencode/agent/task-executor.md.tmpl` | `.opencode/agent/task-executor.md` |
+| `assets/opencode/plugins/harness-guard.js.tmpl` | `.opencode/plugins/harness-guard.js` |
+| `assets/opencode.json.tmpl` | `opencode.json` |
+| `assets/BACKLOG.md.tmpl` | `BACKLOG.md` |
+| `assets/docs/planning/*.tmpl` | `docs/planning/*` (overview, architecture, stack, structure, contracts) |
+| `assets/docs/planning/adr/*.tmpl` | `docs/planning/adr/` (index + template) |
+| `assets/docs/planning/c4/*.tmpl` | `docs/planning/c4/` (context, container, component) |
+| `assets/docs/planning/sequences/login.puml.tmpl` | `docs/planning/sequences/` |
+| `assets/docs/harness/*.md.tmpl` | `docs/harness/*` |
+| `assets/verification.md.tmpl` | `docs/harness/verification.md` |
+| `assets/progress/current.md.tmpl` | `progress/current.md` |
+| `assets/progress/history.md.tmpl` | `progress/history.md` |
+| `assets/build_harness.mjs.tmpl` | `scripts/build_harness.mjs` |
+| `assets/harness.mjs.tmpl` | `scripts/harness.mjs` |
+| `assets/harness-lib.mjs.tmpl` | `scripts/harness-lib.mjs` |
+| `assets/harness-lib.spec.mjs.tmpl` | `scripts/harness-lib.spec.mjs` |
+| `assets/activities.schema.json` | `activities.schema.json` |
+| `assets/package.scripts.json.tmpl` | merge into `package.json` |
+| `assets/GIT_TRACKING.md` | `docs/harness/git-tracking.md` |
+| `assets/gitignore.tmpl` | `.gitignore` |
+| `assets/ignores.txt` | `.prettierignore`, `.eslintignore`, structure walk |
 
 ### Placeholders
 
-The example values are already substituted so the files parse and start. The
-names to look for when replacing are:
-
 `{{PROJECT_NAME}}`, `{{STACK}}`, `{{PACKAGE_MANAGER}}`, `{{HARNESS_CMD}}`,
-`{{EXPLAIN_CMD}}`, `{{BOOTSTRAP_CMD}}`, `{{FORMAT_CMD}}`, `{{LINT_CMD}}`,
-`{{TYPE_CMD}}`, `{{BUILD_CMD}}`, `{{TEST_CMD}}`, `{{TARGET_TEST_CMD}}`,
-`{{CONTRACT_CMD}}`, `{{DOC_PATHS}}`, `{{CODE_ROOTS}}`, `{{TEST_ROOTS}}`,
-`{{IGNORE_DIRS}}`, `{{SOURCE_DIR}}`, `{{DOCS_DIR}}`, `{{REPO_MAP_ROWS}}`,
-`{{LAYOUT_TREE}}`, `{{LAYERS_TABLE}}`, `{{QUALITY_GATES}}`, `{{TREE}}`,
-`{{FILE_SET}}`, `{{TEST_LOCATION}}`, `{{LANGUAGE}}`, `{{FORMATTER}}`,
-`{{LINTER}}`, `{{MAX_LINE}}`, `{{TEST_RUNNER}}`.
+`{{TEST_CMD}}`, `{{BUILD_CMD}}`, `{{DOCSGEN_CMD}}`, `{{FORMAT_CMD}}`,
+`{{LINT_CMD}}`, `{{TYPE_CMD}}`, `{{TARGET_TEST_CMD}}`, `{{SOURCE_DIR}}`,
+`{{DOCS_DIR}}`, `{{REPO_MAP_ROWS}}`, `{{LAYOUT_TREE}}`, `{{QUALITY_GATES}}`,
+`{{TREE}}`, `{{FILE_SET}}`, `{{TEST_LOCATION}}`, `{{LANGUAGE}}`,
+`{{FORMATTER}}`, `{{LINTER}}`, `{{MAX_LINE}}`, `{{TEST_RUNNER}}`,
+`{{GENERATED_DOCS}}`, `{{PLANNING_DOCS}}`, `{{CODE_ROOTS}}`, `{{TEST_ROOTS}}`,
+`{{IGNORE_DIRS}}`, `{{STAGE}}`.
 
-The docs gate checks word count, not truth. Replace every `{{...}}` and delete
-the HTML replacement comments before declaring the harness ready; otherwise
-the docs are placeholders that happen to be long.
+The docs gate checks word count, not truth. Replace every placeholder and delete
+the HTML replacement comments before declaring the harness ready. The
+`docs/planning/*` templates also contain content placeholders
+(`{{PRIMARY_ACTOR}}`, `{{LAYER}}`, `{{CONTRACT_NAME}}`, …); a template that still
+contains one is not a foundation.
 
-### Git tracking contract
+### Filling `harness.mjs`
 
-A harness is also a repository contract. Put the policy in
-`docs/harness/git-tracking.md` and start `.gitignore` from
+Replace the `CONFIG` block:
+
+- `codeRoots` — changed files that count as code.
+- `testRoots` — roots searched for sibling specs.
+- `planning.docs` — required foundation docs and minimum words.
+- `planning.requiredDirs` — planning folders.
+- `structure` — required dirs, forbidden patterns, max lines.
+- `specs` — sibling discovery and targeted command.
+- `gates` — `format`, `lint`, `type`, `build`, `test`, `contract`, `docsgen`,
+  `docblocks`.
+- `docs` — harness docs checked in development.
+- `selfTest` — pure logic test.
+
+Every gate has a `// GATE:` comment. Delete what the stack does not have; set
+optional gates to `null`. `docsgen` is required in practice.
+
+---
+
+## 11. Git tracking contract
+
+Put the policy in `docs/harness/git-tracking.md`; start `.gitignore` from
 `assets/gitignore.tmpl`.
 
-**Track:** source, tests, `AGENTS.md`, `.opencode/agent/*`, `opencode.json`,
-the harness scripts, `docs/` (including `docs/harness/*`), manifests and one
+**Track:** source, tests, `BACKLOG.md`, `.harness/state.json`,
+`docs/planning/**`, `docs/harness/**`, `AGENTS.md`, `.opencode/agent/*`,
+`.opencode/plugins/*`, `opencode.json`, harness scripts, manifests and one
 lockfile, formatter/linter/test config, `progress/history.md`,
 `progress/explore/.gitkeep`, `.env.example`.
 
-**Do not track:** dependencies, build output, framework/test caches, logs,
-secrets/credentials/service-account JSON, and live session state.
+**Do not track:** dependencies, build output, generated documentation,
+framework/test caches, logs, secrets, `activities.json`,
+`.harness/schedule.json`, `.harness/claims/**`, `.harness/approvals.json`,
+`progress/current.md`.
 
-The canonical repo deliberately ignores `/activities.json` and
-`/progress/current.md` (local session state) and tracks
-`progress/history.md` and `progress/explore/.gitkeep`. That avoids conflicts
-between agents and branches. If the team wants shared activity state, that is
-a conscious trade-off; document it.
-
-Verify the policy:
+Verify:
 
 ```bash
-git check-ignore -v activities.json progress/current.md
-git ls-files progress/
+git check-ignore -v activities.json .harness/schedule.json progress/current.md
+git ls-files .harness/ docs/planning/ progress/
 git status --ignored --short | head -40
 ```
 
-Never commit a secret to “make the harness green”. A credential in git is a
+Never commit a secret to make the harness green. A credential in git is a
 release blocker, not a gate.
 
 ---
 
-## 9. Validation: prove the harness works
+## 12. Validation: prove the harness works
 
-Minimum acceptance matrix after wiring the harness:
+| Check | Target |
+| --- | --- |
+| `--planning` on a complete foundation | green, < 2 s |
+| `--planning` on a missing diagram | red with the file name |
+| `--activity` in planning | exit ≠ 0 with `[BLOCKED]` |
+| `--start-dev` without `--user-approved` | exit ≠ 0 |
+| `--start-dev --user-approved` | writes development state + history |
+| `--schedule` with independent activities | parallel batch |
+| `--schedule` with overlapping `touches` | serial batches |
+| `--claim` outside the current batch | exit ≠ 0 |
+| `--claim` all batch members | claims complete |
+| `--activity` with a file outside `touches` | exit ≠ 0 |
+| `--activity` in scope | green, claim released |
+| `--story` without approval | exit `3` |
+| `--approve-story` on a non-awaiting story | exit ≠ 0 |
+| `--story` after approval | green |
+| plugin: edit source in planning | rejected |
+| plugin: edit before batch complete | rejected |
+| plugin: state edit during batch | rejected |
+| plugin: edit inside claimed `touches` | allowed |
+| `node --test scripts/harness-lib.spec.mjs` | green, < 1 s |
 
-| Check                                    | Target                                                                                |
-| ---------------------------------------- | ------------------------------------------------------------------------------------- |
-| `--explain` on a light task              | < 1 s, no gate output                                                                 |
-| `--for-task` light                       | ≤ 10 s                                                                                |
-| `--for-task` medium with a changed spec  | < 15 s, targeted                                                                      |
-| `--for-task` medium with no sibling spec | fallback + warning, still < full                                                      |
-| `--for-task` full                        | all gates, ≤ 2 min                                                                    |
-| default full                             | all gates, green                                                                      |
-| `--changed` with code changes            | medium, targeted                                                                      |
-| `--changed` with docs only               | light                                                                                 |
-| invalid `--for-task` id                  | exit ≠ 0, lists valid refs                                                            |
-| `--for-task` on a done task              | warning, runs anyway                                                                  |
-| full over a light in-progress task       | warning, not failure                                                                  |
-| full activity without reviewer           | warning, not failure                                                                  |
-| docs grep                                | no “run full on every task”                                                           |
-| `AGENTS.md` cold start                   | points to docs/harness + commands                                                     |
-| `.opencode/agent/` roles                 | orchestrator + executor + reviewer                                                    |
-| `progress/current.md` + `history.md`     | present; history tracked, current local                                               |
-| `docs/harness/`                          | architecture, conventions, structure, development, testing, verification, CHECKPOINTS |
-| Git policy                               | `activities.json`/`current.md` ignored; history tracked                               |
-| Cold-agent question                      | can answer “what to run / where / when done”                                          |
-
-Also test the pure logic with `node --test scripts/harness-lib.spec.mjs`.
-It must be under 1 s and dependency-free.
-
-Use a temporary fixture project with stubbed gate commands to test every mode
-before wiring real commands. The canonical harness tests 27 pure/integration
-cases; a new harness should at least cover the mapping, parse, fallback,
-activity level and changed-file classification.
+Use a temporary fixture with stubbed gate commands before wiring real ones. The
+shipped spec covers backlog parsing, plan validation, batching, claim checks,
+touches matching and mode resolution.
 
 ---
 
-## 10. Anti-patterns
+## 13. Anti-patterns
 
-| Anti-pattern                                          | Why it fails                                                        |
-| ----------------------------------------------------- | ------------------------------------------------------------------- |
-| Full gate after every edit                            | 2 min × dozens of edits = the harness is bypassed                   |
-| Sequential `spawnSync` for independent gates          | Sums the critical path; 118 s instead of the 70–85 s target         |
-| Editing while the harness runs                        | Reads half-written files; failures point at the wrong place         |
-| Retry loop on a red gate                              | Hides the root cause; fix the code or the gate                      |
-| Noisy warnings on historical/done activities          | Trains the user to ignore warnings                                  |
-| `--no-cache` before a cache exists                    | A flag that disables nothing; false comfort                         |
-| `harness:ci` that skips tests                         | Misleading name; CI must run the tests it claims to run             |
-| Full run with `--skip-*` treated as full              | It is not a complete verification; warn and do not close on it      |
-| Light level for an unknown type                       | A false green is worse than a false red; default to medium          |
-| Contract check before the build                       | Reads a stale artifact; run it after the build                      |
-| Scanning `node_modules`/`dist`                        | Slow and noisy; add ignores before the first gate                   |
-| Reviewer on every task                                | Reviewer sees partial changes; invoke once at activity close        |
-| Migrating all historical tasks just to add `type`     | No value and a chance to corrupt working history; use the fallback  |
-| Parallelizing by changing gate semantics              | Refactor mechanics only; keep gates, order and per-gate output      |
-| Inventing project rules in the harness                | The harness enforces docs, it does not create policy                |
-| Shipping the engine without `AGENTS.md`/docs/progress | The next agent invents a workflow and the gates drift               |
-| Tracking live session state or secrets                | Merge conflicts and credential leaks; history is the durable record |
-| Leaving `docs/harness/*` as placeholders              | Agents invent structure and the docs gate becomes a lie             |
-| No `.opencode` roles                                  | No boundary between planning, implementation and review             |
+| Anti-pattern | Why it fails |
+| --- | --- |
+| Writing code in planning | The foundation changes after the code exists; decisions become archaeology |
+| Allowing a return to planning | It becomes rework and a moving target |
+| Pre-decomposing the backlog | 50 vague stories do not justify 80 activities |
+| Global TDD on vague requirements | Tests encode guesses; the user gets what they did not ask for |
+| An agent reviewer | It costs a full run and still is not the user's judgment |
+| Serial execution of an independent batch | Wastes the only real parallelism the harness has |
+| Relying on `dependsOn` only | Two "independent" activities edit the same ADR index or migration folder |
+| No `touches` | Cannot verify scope; parallel agents corrupt each other |
+| Markdown feature specs | They duplicate the code and go stale; use docstrings + ADR |
+| `docsgen` configured but never run | The docs drift silently; run it at activity close |
+| Docblock rules disabled | The documentation policy is a lie |
+| Full gate after every edit | The harness gets bypassed |
+| Sequential `spawnSync` for independent gates | Sums the critical path |
+| Editing while a gate runs | Reads half-written files |
+| `--story` without approval | The user loses the only decision that matters |
+| Tracking session state or secrets | Conflicts and credential leaks |
+| Leaving planning docs as placeholders | Agents invent architecture; the docs gate becomes decoration |
+| Silently skipping a gate | A false green is worse than a false red |
 
 ---
+
+## Upgrading an existing harness
+
+If the repository already has a harness, **do not re-scaffold it**. A live repo
+has history, in-flight work and a foundation that may not exist yet. Use the
+upgrade procedure instead of the build sequence:
+
+1. **Inventory read-only** — detect the old CLI (`--for-task`, `--dev-build`),
+   typed activities, the reviewer role and the missing planning docs.
+2. **Branch and back up** — never migrate on top of uncommitted work, never
+   rewrite git history, never delete `progress/history.md`.
+3. **Replace the engine** — copy the new `harness.mjs`, `harness-lib.mjs`, spec,
+   bootstrap and plugin; run the pure-logic tests before anything else.
+4. **Reconstruct the foundation** — reverse-engineer `docs/planning/**` from the
+   real code and the old docs; label reconstructed decisions; ask the user for
+   intent. Create `BACKLOG.md` from pending work, not from old activities.
+5. **Handle documentation debt** — enable the generator and docblock rules; where
+   legacy code fails, create a visible baseline plus a backlog story, never a
+   silent skip.
+6. **Enter development** — finish planning, run `--start-dev --user-approved`,
+   then verify the protocol on the first real story.
+
+Stop for user approval at the inventory, the reconstructed foundation and the
+stage transition. Full phase-by-phase procedure, rollback and a copy-paste
+instruction: `references/migrating-existing-harness.md`.
 
 ## Build sequence
 
-Follow the same `docs → test → implement` order you want the project to follow:
+Follow the same order you want the project to follow:
 
-1. **Contract** — `AGENTS.md`, `.opencode/agent/*`, `progress/`, `docs/harness/*`
-   and the git policy. This is the entry point a cold agent reads first.
-2. **Docs** — write `verification.md`, architecture, conventions, structure,
-   testing, development and checkpoints.
-3. **Bootstrap** — `scripts/build_harness.mjs` creates `activities.json` and
-   `progress/*` only when missing.
-4. **Test** — copy the pure lib + spec; make the mapping tests pass.
-5. **Implement** — copy the harness template, fill `CONFIG`, wire the modes.
-6. **Smoke** — run a fixture with stubbed commands for every mode.
-7. **Wire** — run the real commands; add ignores; fix false positives.
-8. **Accept** — run the acceptance matrix; record real timings.
-9. **Document** — update the stack reference and the pending optimizations.
+1. **Detect** — manifests, package manager, test runner, doc generator.
+2. **Contract** — `AGENTS.md`, agent roles, plugin, `opencode.json`, `BACKLOG.md`,
+   `progress/`, `docs/harness/*`, git policy.
+3. **Foundation** — `docs/planning/*` and PlantUML diagrams, filled with the
+   project's real decisions (never placeholders).
+4. **Bootstrap** — `scripts/build_harness.mjs` creates `.harness/state.json`,
+   `activities.json`, `BACKLOG.md`, `progress/*`, planning folders only when
+   missing.
+5. **Test the engine** — copy the pure lib + spec; make it green in under 1 s.
+6. **Implement the engine** — copy `harness.mjs`, fill `CONFIG`, wire the stage,
+   schedule, claim, activity and story commands.
+7. **Test the protocol** — fixture with stubbed gates: planning lock, batch
+   scheduling, claims, touches, approval exit `3`.
+8. **Test the plugin** — planning lock, incomplete batch, state lock, scope
+   union.
+9. **Wire** — run the real commands, add ignores, fix false positives.
+10. **Accept** — run the validation matrix and record real timings.
+11. **Document** — update the stack reference and pending optimizations.
 
 ## Source-of-truth rule
 
 If the project says X, teach X. If the project says nothing, do not invent it.
-If a rule is stack-specific, put it in `references/stacks/`. If it is universal,
-keep it in this file and in the lessons.
+Stack-specific rules go in `references/stacks/`. Universal rules stay in this
+file and in `references/lessons.md`.
 
-Read `references/lessons.md` before changing the gate semantics. Every lesson
-there has a symptom, a cause, a fix and a number from the canonical repo.
+Read `references/lessons.md` before changing the scheduling or gate semantics.
+Every lesson there has a symptom, a cause, a fix and a number.

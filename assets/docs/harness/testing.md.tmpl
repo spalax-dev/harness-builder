@@ -6,97 +6,108 @@
 
 # Testing Policy
 
-> How to write tests that actually catch bugs.
-> A test's value = its ability to **fail when the code is wrong**.
+> TDD applies to the story being built, not to the whole repository.
+> A test's value is its ability to **fail when the code is wrong**.
 
 Stack: **{{TEST_RUNNER}}**.
 
 ---
 
-## 0. Core principle: the mutation mindset
+## 1. Story-scoped TDD
 
-Before writing a test, ask: _"If this unit were broken — deleted, returned the
-wrong value, or crashed on input X — would this test fail?"_
+```
+story selected
+  -> activities derived
+    -> tests activity (write RED)
+      -> implementation activity (turn GREEN)
+```
 
-If the test would still pass, it has no value. Rewrite it or delete it.
+Why not global test-first:
 
----
+- Requirements are often vague when the backlog is written. A test written
+  against a guessed contract locks in the wrong idea.
+- The backlog is coarse on purpose; the test is written when the story starts
+  and the questions are answered.
+- Inside the story, the rule is strict: the tests activity comes before its
+  implementation activity.
 
-## 1. Test-first (red-green-refactor)
-
-1. **Write the test** — it must fail on the current code.
-2. **Confirm RED** with the targeted test command. A test that passes before the
-   implementation asserts nothing meaningful.
-3. **Implement** the minimal code to make it pass.
-4. **Confirm GREEN**.
-5. **Refactor** — keep it green.
-
-Enforcement:
-
-- A task is `in_progress` only after its spec exists.
-- The reviewer asks: _"would this test have failed before the implementation?"_
-  If not, the test was not written first (or is too weak) — reject.
+A test task is `in_progress` only once its test exists. A test that passes before
+the implementation asserts nothing.
 
 ---
 
-## 2. Structure
+## 2. The mutation mindset
 
-- **AAA**: Arrange (fixture, inputs, mocks) → Act (call once) → Assert
-  (observable outcome).
-- **One scenario per test.** Do not assert three unrelated things.
-- **Naming**: `should <behavior> when <condition>`.
-- Keep fixtures realistic; do not encode the implementation in the fixture.
+Before writing a test, ask: *"If this unit were deleted, returned the wrong
+value, or crashed on input X, would this test fail?"*
+
+If not, the test has no value. Rewrite or delete it.
 
 ---
 
-## 3. Assertion quality
+## 3. Structure
 
-Assert the observable contract, not a side effect.
+- **AAA**: Arrange → Act → Assert.
+- One scenario per test.
+- Naming: `should <behavior> when <condition>`.
+- Assert the observable contract, not a private side effect.
+- Fixtures are realistic; never encode the implementation in the fixture.
+
+---
+
+## 4. Assertion quality
 
 Strong:
 
-- Exact values for deterministic output.
-- Negative paths: missing, malformed, not found, unauthorized.
-- Edge cases: empty, null, unicode, boundaries.
-- Rendered output: specific element/attribute/text, not "something rendered".
+- exact values for deterministic output;
+- negative paths: missing, malformed, not found, unauthorized;
+- boundaries: empty, null, unicode, limits;
+- rendered output: a specific element/attribute/text.
 
-Forbidden:
+Weak:
 
-| Pattern                                     | Why it is weak                     |
-| ------------------------------------------- | ---------------------------------- |
-| `expect(x).toBeTruthy()` as the only assert | Passes for almost any value        |
-| "did not throw"                             | Verifies nothing about the outcome |
-| `expect(spy).toHaveBeenCalled()` only       | Asserts a call, not the contract   |
-| Reading private internals                   | Tests implementation, not behavior |
-| Snapshot as the only assertion              | Accepts any change wholesale       |
+| Pattern                                 | Why                                  |
+| --------------------------------------- | ------------------------------------ |
+| `toBeTruthy()` as the only assertion     | Passes for almost any value          |
+| "did not throw"                         | Says nothing about the outcome       |
+| `toHaveBeenCalled()` only               | Asserts a call, not the contract     |
+| Reading private internals               | Tests implementation, not behavior   |
+| Snapshot as the only assertion          | Accepts any change wholesale         |
 
 ---
 
-## 4. Mocking: only at boundaries
+## 5. Mocking
 
-- Mock external boundaries: network, filesystem, clock, random, third-party
-  services.
+- Mock only at boundaries: network, filesystem, clock, random, third parties.
 - Never mock the unit's own logic.
-- Assert spies were called with exact arguments.
 - Prefer fakes over mocks when the contract is simple.
-- Tests must not depend on the developer's machine or network.
+- Tests never depend on the developer's machine, network or time of day.
 
 ---
 
-## 5. Coverage and flakiness
+## 6. Contract tests
 
-- Coverage is a signal, not a target. A high number with weak assertions is
-  worse than a lower number with real behavior tests.
-- No arbitrary sleeps. Use fake timers or await the actual condition.
-- No order-dependent tests.
-- A flaky test is a bug; fix it or delete it, do not retry it.
+When an activity changes `docs/planning/contracts.md` or the OpenAPI/IDL:
+
+- add or update a contract test that validates the published shape;
+- the test fails if a required field disappears or an error shape changes;
+- generated docs are not evidence; the contract test is.
 
 ---
 
-## 6. Commands
+## 7. Commands
 
 - Full: `{{TEST_CMD}}`.
 - Targeted: `{{TARGET_TEST_CMD}} <spec>`.
 - Harness logic: `node --test scripts/harness-lib.spec.mjs`.
 
-Run the targeted spec during iteration and the full suite at activity close.
+Run targeted tests during the activity and the full suite at story close.
+
+---
+
+## 8. Flakiness and coverage
+
+- Coverage is a signal, not a target.
+- No arbitrary sleeps; use fake timers or await the condition.
+- No order-dependent tests.
+- A flaky test is a bug: fix it or delete it. Never retry it.

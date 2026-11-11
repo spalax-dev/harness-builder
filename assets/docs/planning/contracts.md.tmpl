@@ -1,0 +1,59 @@
+<!--
+  contracts.md.tmpl → docs/planning/contracts.md
+
+  Contracts between applications, services or modules that are developed
+  independently. A contract is a promise: shape, errors, versioning, auth.
+  Replace: {{PROJECT_NAME}}, {{CONTRACT_NAME}}, {{TRANSPORT}}.
+-->
+
+# Contracts
+
+> The promises between parts of {{PROJECT_NAME}}. If two components are built by
+> different activities or different teams, their contract lives here.
+
+## 1. Contract inventory
+
+| Contract          | Producer       | Consumer       | Transport        | Version |
+| ----------------- | -------------- | -------------- | ---------------- | ------- |
+| {{CONTRACT_NAME}} | {{PRODUCER}}   | {{CONSUMER}}   | {{TRANSPORT}}    | v1      |
+
+A contract without a consumer is not a contract; delete it.
+
+## 2. Shape
+
+For each contract, document:
+
+- **Request / input** — required and optional fields, types, limits.
+- **Response / output** — shape, pagination, empty cases.
+- **Errors** — the error taxonomy, status/error codes, retryability.
+- **Idempotency** — which operations are safe to repeat.
+- **Authentication / authorization** — who may call it and with what token.
+- **Versioning** — how a breaking change is introduced and retired.
+
+## 3. Example — {{CONTRACT_NAME}}
+
+```text
+{{METHOD}} {{PATH_OR_NAME}}
+Request:  {{REQUEST_SHAPE}}
+Response: {{RESPONSE_SHAPE}}
+Errors:   {{ERROR_SHAPE}}
+```
+
+## 4. Compatibility rules
+
+- Additive changes are allowed: new optional fields, new endpoints.
+- Removing or renaming a field is breaking; it needs a new version and an ADR.
+- Consumers must ignore unknown fields.
+- A contract change updates this document **and** the generated API docs in the
+  same activity.
+
+## 5. Ownership and review
+
+- Each contract has an owner (the producing activity or team).
+- A contract change is reviewed by a consumer, not only by the producer.
+- The OpenAPI/IDL/schema file is the machine-readable source; this document is
+  the human-readable rationale.
+
+## 6. Open questions
+
+- {{CONTRACT_QUESTION}}

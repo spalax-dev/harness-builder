@@ -34,8 +34,9 @@ scripts first.
 | test full   | `npm test`                      | `pnpm test`                           | Vitest/Jest/node:test                                       |
 | test target | `npx vitest run <spec>`         | `pnpm exec vitest run <spec>`         | Jest: `npx jest <spec>`; node:test: `node --test <spec>`    |
 | contract    | project script                  | project script                        | `dist` exports, bundle entry, CSS tokens, package `exports` |
+| docsgen     | `npx typedoc`                   | `pnpm exec typedoc`                   | TypeDoc, JSDoc+jsdoc2md, Compodoc (Angular)                 |
 | structure   | config rules                    | config rules                          | dirs, forbidden patterns, max lines                         |
-| docs        | required docs                   | required docs                         | README/architecture not placeholders                        |
+| docs        | required docs                   | required docs                         | harness/planning docs not placeholders                      |
 
 For a pnpm project, use `pnpm exec` for binaries and `pnpm run` for scripts.
 Do not mix package managers. One lockfile per repo.
@@ -113,12 +114,27 @@ before falling back.
 
 Contract checks run after build. If build is skipped, skip contract.
 
+## Documentation generator
+
+The harness requires one before it leaves planning:
+
+- TypeDoc for a TypeScript library or app: `npx typedoc --out docs/api src/index.ts`.
+- JSDoc + `jsdoc2md` for plain JS: generate markdown from the `/** */` blocks.
+- Compodoc for Angular: `npx compodoc -p tsconfig.app.json -d docs/api`.
+- String-based frameworks (NestJS, Fastify, Express) also publish the OpenAPI
+  contract; treat the contract file as a generated artifact and validate it.
+
+Enable docblock enforcement in the linter: `eslint-plugin-jsdoc` with
+`jsdoc/require-jsdoc` on exported symbols, plus
+`jsdoc/require-param`/`require-returns`. Generated docs are ignored by git.
+
 ## Budgets
 
-- Light: changed format/lint + structure/docs + self-test — seconds.
-- Medium: + affected type + targeted specs — usually 10–40 s.
-- Full: all + build + full tests — often 60–180 s; measure before setting a
-  budget. The canonical Node/TS full is ~98 s with two suites.
+- `--fast`: changed format/lint + structure — seconds.
+- Iteration: + affected type + targeted specs — usually 10–40 s.
+- Activity: + docsgen + touches check — one generator run.
+- Story: all + build + full tests — often 60–180 s; measure before setting a
+  budget. The canonical Node/TS full was ~98 s with two suites.
 
 ## Pitfalls
 

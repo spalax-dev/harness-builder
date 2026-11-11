@@ -1,0 +1,18 @@
+@startuml
+!include <C4/C4_Container>
+
+title {{PROJECT_NAME}} — Containers
+
+Person(user, "{{PRIMARY_ACTOR}}")
+
+System_Boundary(system, "{{PROJECT_NAME}}") {
+  Container(web, "{{WEB_CONTAINER}}", "{{WEB_TECH}}", "{{WEB_RESPONSIBILITY}}")
+  Container(api, "{{API_CONTAINER}}", "{{API_TECH}}", "{{API_RESPONSIBILITY}}")
+  ContainerDb(db, "{{DATABASE}}", "{{DB_TECH}}", "{{DB_RESPONSIBILITY}}")
+}
+
+Rel(user, web, "Uses", "HTTPS")
+Rel(web, api, "Calls", "{{PROTOCOL}}")
+Rel(api, db, "Reads/writes", "{{DB_PROTOCOL}}")
+
+@enduml

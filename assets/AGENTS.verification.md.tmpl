@@ -1,51 +1,48 @@
 <!--
   AGENTS.verification.md.tmpl — paste this block into AGENTS.md.
-  Replace the example commands (npm) with the package manager and commands
-  detected for this project: pnpm, yarn, bun, uv, poetry, cargo, go, make.
-  Keep the shape; delete rows the project does not need.
+  Replace the example commands with the detected stack. Keep the shape; delete
+  rows the project does not need.
 
-  Placeholders: {{STACK}}, {{PACKAGE_MANAGER}}, {{FORMAT_CMD}}, {{LINT_CMD}},
-  {{TYPE_CMD}}, {{BUILD_CMD}}, {{TEST_CMD}}, {{TARGET_TEST_CMD}},
-  {{CONTRACT_CMD}}, {{DOC_PATHS}}, {{CODE_ROOTS}}, {{TEST_ROOTS}},
-  {{IGNORE_DIRS}}.
+  Placeholders: {{HARNESS_CMD}}, {{TEST_CMD}}, {{BUILD_CMD}}, {{DOCSGEN_CMD}},
+  {{STACK}}, {{PACKAGE_MANAGER}}.
 -->
 
-## Verification by task type
+## Verification — two stages, three steps
 
-Classify the task **before** editing. `breaking: true` always means full.
+The stage is read from `.harness/state.json`. It is one-way.
 
-| `type`                                  | Level    | Reviewer               |
-| --------------------------------------- | -------- | ---------------------- |
-| `feat`, `refactor`                      | **full** | yes, at activity close |
-| `fix`, `perf`, `test`                   | medium   | no                     |
-| `chore`, `docs`, `style`, `ci`, `build` | light    | no                     |
+| Stage         | Command                    | What runs                                             |
+| ------------- | -------------------------- | ----------------------------------------------------- |
+| `planning`    | `{{HARNESS_CMD}} --planning` | planning docs, PlantUML sanity, backlog, docsgen config |
+| `development` | `{{HARNESS_CMD}} --fast`   | changed format/lint + structure                        |
+| `development` | `{{HARNESS_CMD}} --activity ACT-xx` | + affected type, targeted tests, docsgen, touches |
+| `development` | `{{HARNESS_CMD}} --story US-xxx` | all gates, production build, full tests, docsgen, approval |
 
-| Level  | Command                                     | What runs                                                |
-| ------ | ------------------------------------------- | -------------------------------------------------------- |
-| light  | `node scripts/harness.mjs --for-task <ref>` | changed format/lint + structure/docs + harness self-test |
-| medium | same                                        | + affected type check + targeted specs                   |
-| full   | same                                        | all gates (final gate at activity close)                 |
+Development commands are **blocked** in planning, not silently skipped.
 
-- `node scripts/harness.mjs --explain <ref>` prints the level and the gate set
-  without running anything.
-- `node scripts/harness.mjs --fast` is for iteration;
-  `node scripts/harness.mjs --changed` derives light/medium from the working
-  tree.
-- Each task runs **its own level**. The reviewer is invoked **once at activity
-  close**, only when the activity level is full.
-- A `feat` needs a new or extended spec. A non-breaking `fix` needs a
-  regression test that fails without the fix. The reviewer rejects otherwise.
-- Full harness: `node scripts/harness.mjs` (or `npm run harness`).
-- Full matrix, docs/tests per type and pending optimizations:
-  `docs/harness/verification.md`.
+### Story flow
+
+1. User picks a story → `- status: active` in `BACKLOG.md`.
+2. Orchestrator derives activities (`dependsOn`, `touches`) → user approves the
+   plan.
+3. `{{HARNESS_CMD}} --schedule` → batches.
+4. Batch of N independent activities → N executors in one message; each claims
+   with `--claim`.
+5. Activity close → `--activity`; then mark done and reschedule.
+6. Story close → `--story`; exit `3` means "green, awaiting user approval".
+7. `--approve-story US-xxx --by <name>` → `--story` again → mark done.
 
 ### Hard rules
 
-- Never run the full gate after every edit; use `--fast` between edits and the
-  task level when the task is done.
-- Maximum **2 full runs per activity**. A third run needs a concrete reason
-  (e.g. a release/PR gate).
-- Do not edit files while the harness is running.
-- The reviewer sees the whole activity, not a partial change.
-- Historical activities are not migrated; `task.type ?? activity.type ??
-'medium'` is the fallback.
+- No code and no tests in PLANNING. The plugin blocks source edits.
+- Never return to PLANNING. Edit `docs/planning/**` in place when a decision
+  changes.
+- The whole backlog is never decomposed up front.
+- Every activity's first task is its documentation task; the tests activity
+  precedes the implementation activity.
+- A batch of N is executed with N agents in one message, never serially.
+- Only the user approves a story. `--story` refuses to pass without a recorded
+  approval.
+- Executors never write `activities.json`, `BACKLOG.md` or `progress/`.
+
+Full matrix: `docs/harness/verification.md`. Workflow: `docs/harness/development.md`.

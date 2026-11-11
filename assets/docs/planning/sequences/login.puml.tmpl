@@ -1,0 +1,21 @@
+@startuml
+title {{FLOW_NAME}}
+
+actor "{{ACTOR}}" as actor
+participant "{{ENTRYPOINT}}" as entry
+participant "{{DOMAIN}}" as domain
+database "{{DATABASE}}" as db
+
+actor -> entry: {{REQUEST}}
+entry -> domain: {{COMMAND}}
+domain -> db: {{QUERY}}
+db --> domain: {{RESULT}}
+alt {{FAILURE_CONDITION}}
+  domain --> entry: {{ERROR}}
+  entry --> actor: {{ERROR_RESPONSE}}
+else {{SUCCESS_CONDITION}}
+  domain --> entry: {{SUCCESS}}
+  entry --> actor: {{SUCCESS_RESPONSE}}
+end
+
+@enduml

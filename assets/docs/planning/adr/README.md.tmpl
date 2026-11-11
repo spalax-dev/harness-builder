@@ -1,0 +1,30 @@
+<!--
+  adr/README.md.tmpl → docs/planning/adr/README.md
+
+  The ADR index. One file per decision. The harness checks numbering and
+  membership; it cannot check whether the decision was good.
+-->
+
+# Architecture Decision Records
+
+> Every decision that changes the foundation, a contract or a flow gets one
+> numbered file here. The index is the source of truth.
+
+## Rules
+
+1. One decision per file: `NNNN-kebab-title.md`, zero-padded and sequential.
+2. `0001` records that ADRs exist; never renumber it.
+3. A superseded ADR stays in place with `status: superseded by NNNN`.
+4. The file is written in the activity that takes the decision, in its
+   `DOCUMENT` step.
+5. Add the row to the index in the same change.
+
+## Index
+
+| ADR  | Title                          | Status   | Date       |
+| ---- | ------------------------------ | -------- | ---------- |
+| 0001 | Record architecture decisions  | accepted | {{DATE}}   |
+
+## Template
+
+Copy `adr-template.md` to `NNNN-<title>.md` and fill it.

@@ -30,7 +30,8 @@ Covers `uv`, Poetry and pip/venv projects. Prefer project-owned commands
 | test target | `uv run pytest tests/test_x.py`      | `poetry run pytest tests/test_x.py` | `.venv/bin/pytest tests/test_x.py` |
 | contract    | import the package / inspect wheel   | same                                | same                               |
 | structure   | `src/<pkg>` layout, no `__pycache__` | same                                | same                               |
-| docs        | mkdocs/pdoc build or docs word count | same                                | same                               |
+| docsgen     | `uv run mkdocs build --strict`       | `poetry run mkdocs build --strict`  | `.venv/bin/mkdocs build --strict`  |
+| docs        | docs/harness and docs/planning not placeholders | same                    | same                               |
 
 Formatter alternatives: Black (`black --check .`) and isort if the project uses
 them. Linter alternatives: flake8, pylint. Type alternatives: pyright, basedpyright.
@@ -72,11 +73,25 @@ Run targeted tests with the same runner (`pytest`), not a new one.
 - JSON schema validates an example resource.
 - Docs build with `mkdocs build --strict` (if MkDocs is configured).
 
+## Documentation generator
+
+Pick one in planning; the harness refuses to leave planning without it.
+
+- **MkDocs + mkdocstrings**: `mkdocs build --strict`; docstrings come from the
+  modules, no duplicated markdown pages.
+- **Sphinx**: `sphinx-build -b html docs docs/_build`; autodoc for the API.
+- **pdoc** for a small library: `pdoc --output-dir docs/api <pkg>`.
+
+Enforce docblocks in the linter: Ruff `D` rules (`pydocstyle`) or `pydoclint`,
+plus `mypy`/`pyright` for signatures. Generated output (`site/`, `_build/`,
+`docs/api/`) is ignored by git.
+
 ## Budgets
 
-- Light: changed `ruff` format/lint + structure/docs — seconds.
-- Medium: + `mypy`/`pyright` + targeted `pytest` — usually 5–30 s.
-- Full: + build + full `pytest` + docs build — measure; suites vary widely.
+- `--fast`: changed `ruff` format/lint + structure — seconds.
+- Iteration: + `mypy`/`pyright` + targeted `pytest` — usually 5–30 s.
+- Activity: + docsgen + touches check.
+- Story: + build + full `pytest` — measure; suites vary widely.
 
 ## Pitfalls
 

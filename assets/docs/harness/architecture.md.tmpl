@@ -1,75 +1,109 @@
 <!--
   architecture.md.tmpl → docs/harness/architecture.md
 
+  How the harness itself works. Product architecture lives in
+  docs/planning/architecture.md; do not duplicate it here.
+
   Replace: {{PROJECT_NAME}}, {{STACK}}, {{SOURCE_DIR}}, {{LAYOUT_TREE}},
-  {{LAYERS_TABLE}}, {{QUALITY_GATES}}.
-  Keep the "quality gates" section aligned with scripts/harness.mjs.
+  {{QUALITY_GATES}}.
 -->
 
-# Architecture
+# Harness Architecture
 
-> What "good work" means in this project.
-
----
-
-## 1. Project overview
-
-{{PROJECT_NAME}} is built with **{{STACK}}**. Describe the product in one
-paragraph: what it does, who consumes it, and what is explicitly out of scope.
-
-Design goals:
-
-- **Deterministic** — same input, same output.
-- **Observable** — failures are visible and actionable.
-- **Small surface** — new modules are added only when this document describes
-  their home.
-- **Safe** — no secrets in source, no unsafe defaults, no hidden I/O.
+> How verification and work tracking are wired in {{PROJECT_NAME}}. The product
+> architecture is in `docs/planning/architecture.md`.
 
 ---
 
-## 2. Layout
+## 1. Two layers
+
+| Layer        | Owns                                                    | Lives in |
+| ------------ | ------------------------------------------------------- | -------- |
+| User stories | What the user wants, in the user's words                 | `BACKLOG.md` |
+| Execution    | Activities and tasks for the **selected** story          | `activities.json` |
+
+Stories do not contain activities. Activities carry `storyId`; that is the only
+relationship. A story selected today produces activities today.
+
+## 2. Stages
+
+`.harness/state.json` records the stage:
+
+```json
+{
+  "project": "{{PROJECT_NAME}}",
+  "stage": "planning",
+  "startedAt": null,
+  "approvedBy": null
+}
+```
+
+- `planning` → `development` only through `--start-dev --user-approved`.
+- There is no way back. Planning documents remain editable.
+- The stage is tracked in git: it is a project decision, not session noise.
+
+## 3. Files
+
+| File                          | Role                                              | Tracked |
+| ----------------------------- | ------------------------------------------------- | ------- |
+| `BACKLOG.md`                  | User stories                                      | yes     |
+| `activities.json`             | Activities of the active story                    | no      |
+| `.harness/state.json`         | Stage                                             | yes     |
+| `.harness/schedule.json`      | Computed batches                                  | no      |
+| `.harness/claims/*.json`      | Active executor claims                            | no      |
+| `.harness/approvals.json`     | Recorded user approvals                           | no      |
+| `progress/current.md`         | Live session                                      | no      |
+| `progress/history.md`         | Durable record                                    | yes     |
+
+## 4. Engine
+
+`scripts/harness.mjs`:
+
+- reads the stage;
+- selects the gate set;
+- runs independent gates with async `spawn` + `Promise.all`;
+- computes batches from `dependsOn` + `touches`;
+- validates the backlog and the activity plan;
+- enforces the touches boundary with `git status`;
+- refuses to pass a story without recorded approval.
+
+`scripts/harness-lib.mjs` holds the pure logic: backlog parsing, plan
+validation, scheduling, claim checks, mode resolution. It is covered by
+`node --test scripts/harness-lib.spec.mjs`.
+
+## 5. Plugin
+
+`.opencode/plugins/harness-guard.js` is the mechanical guard:
+
+1. In `planning`, source and test edits are rejected.
+2. During a batch, `activities.json`, `BACKLOG.md`, `progress/` and `.harness/`
+   are read-only.
+3. An executor can only write inside the union of the claimed activities'
+   `touches`.
+4. Edits are blocked until every activity in the batch is claimed, which is what
+   forces parallel execution.
+
+The plugin does not replace the harness. It guards the protocol; the harness
+proves the work.
+
+## 6. Quality gates
+
+{{QUALITY_GATES}}
+
+Gate policy and commands: `docs/harness/verification.md`.
+Workflow: `docs/harness/development.md`.
+
+## 7. Layout
 
 ```text
 {{LAYOUT_TREE}}
 ```
 
-Rules:
+## 8. Design rules
 
-- One folder per feature/module; kebab-case names.
-- Every source file has a documented home; a new folder requires a docs update
-  first.
-- Tests live next to the code they protect (or in the project's documented
-  test tree).
-- Generated output never lives in source directories.
-
----
-
-## 3. Layers
-
-| Layer            | Contents | May import from |
-| ---------------- | -------- | --------------- |
-| {{LAYERS_TABLE}} |
-
-Dependencies flow top-down. No cycles. I/O belongs at the boundary layer, not
-inside pure logic.
-
----
-
-## 4. State and data
-
-- Server state lives behind the service/client layer.
-- Component/UI state is derived from the smallest possible source.
-- No global mutable singletons outside the project's dependency-injection
-  mechanism.
-- Persisted data has an explicit schema and a migration policy.
-
----
-
-## 5. Quality gates
-
-{{QUALITY_GATES}}
-
-The harness derives a **level** from the task type. Light runs changed
-format/lint plus structure/docs; medium adds the affected type check and
-targeted specs; full runs every gate above. `docs/harness/verification.md` is
-the source of truth for the matrix; `AGENTS.md` has the short version.
+- The harness enforces the project's rules; it does not invent them.
+- A gate exists only if a failure catches a bug the other gates miss.
+- The fast path must be the easy path: `--fast` for editing, `--activity` and
+  `--story` for closing.
+- A false green is worse than a false red. A missing gate says `[SKIP]`; it
+  never pretends to have run.

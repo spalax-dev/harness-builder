@@ -1,63 +1,87 @@
 # Harness Builder
 
-A reusable agent skill for adding **task-scoped verification** to a repository:
-light checks for docs/chores, targeted tests for fixes, and the full gate only
-when a feature or refactor needs it. It ships the harness plus the agent
-contract (`AGENTS.md`, `.opencode` roles, `progress/`, `docs/harness/`).
+A reusable agent skill for adding a **two-stage verification harness** to a
+repository:
+
+- **PLANNING** — foundation docs, C4/PlantUML, stack and ADRs, contracts, and a
+  coarse `BACKLOG.md` of user stories. No code, no tests. One-way.
+- **DEVELOPMENT** — one story at a time, derived into activities and tasks,
+  scheduled into parallel batches by dependency and write scope,
+  documentation-first per activity, story-scoped TDD, and **user approval**
+  instead of an agent reviewer.
+
+It ships the engine, the agent contract (`AGENTS.md`, roles, plugin) and the
+foundation templates.
 
 ## What it does
 
-- Derives the level from the task type:
-  - `feat` / `refactor` / breaking → **full** (all gates + reviewer at close)
-  - `fix` / `perf` / `test` → **medium** (affected type + targeted specs)
-  - `chore` / `docs` / `style` / `ci` / `build` → **light** (changed
-    format/lint + structure/docs)
-- Adds `--for-task`, `--explain`, `--fast`, `--changed` and `--dev-build`.
-- Runs the spec next to a changed file; falls back to the package suite when
-  there is none.
-- Keeps full functionally identical when gates are parallelized.
-- Ships the contract: `AGENTS.md`, `.opencode/agent/*`, `progress/`,
-  `docs/harness/*`, and a tracked-vs-ignored git policy.
+- Records the stage in `.harness/state.json` and refuses to mix stages.
+- Parses `BACKLOG.md`; derives activities only for the selected story.
+- Schedules batches from `dependsOn` + `touches`; independent activities run in
+  parallel, conflicting ones serialize.
+- Blocks source edits in planning and out-of-scope edits during a batch
+  (`.opencode/plugins/harness-guard.js`).
+- Requires a documentation generator and runs it at activity/story close.
+- Keeps TDD scoped to the story being built.
+- Makes the user approve the plan and the finished story; `--story` exits `3`
+  until then.
+- Ships the contract: `AGENTS.md`, `.opencode/agent/*`, plugin,
+  `progress/*`, `docs/harness/*` and the git policy.
+
+## Commands
+
+```bash
+node scripts/harness.mjs --stage
+node scripts/harness.mjs --planning
+node scripts/harness.mjs --start-dev --user-approved --by <name>
+node scripts/harness.mjs --schedule
+node scripts/harness.mjs --claim ACT-01
+node scripts/harness.mjs --activity ACT-01
+node scripts/harness.mjs --story US-001
+node scripts/harness.mjs --approve-story US-001 --by <name>
+node scripts/harness.mjs --fast
+```
 
 ## Quick start
 
-```bash
-cp -R harness-builder ~/.agents/skills/harness-builder
-```
+Copy the skill to `~/.agents/skills/harness-builder`, then ask the agent:
 
-Then ask the agent:
+> Use the `harness-builder` skill to add a two-stage harness to this repo.
+> Detect the stack and the documentation generator, scaffold the foundation and
+> the agent contract, fill the gate commands, and prove the protocol with a
+> fixture.
 
-> Use the `harness-builder` skill to add a verification harness to this repo.
-> Detect the stack, scaffold the agent contract, and fill the gate commands.
-
-Minimum checks:
+Minimum checks after scaffolding:
 
 ```bash
 node --test scripts/harness-lib.spec.mjs
-node scripts/harness.mjs --explain 1.a
-node scripts/harness.mjs --fast
-node scripts/harness.mjs --for-task 1.a
+node scripts/harness.mjs --explain
+node scripts/harness.mjs --stage
 ```
 
-**Good fit:** a project with at least three meaningful gates and a full run
-that costs more than a few seconds. **Not a fit:** a three-file script with one
-test command; if the full run is already under ~10 s and stable, skip this.
+**Good fit:** a project with at least three meaningful gates and work that
+benefits from parallel activities. **Not a fit:** a three-file script with one
+test command.
 
-## Stacks
+## Stages at a glance
 
-Angular, Node/TypeScript (React, Vue, Svelte, Next, Nuxt), Python, plus Rust/Go
-via the stack table in `SKILL.md`. Project-specific commands live in
-`references/stacks/`; the core is stack-agnostic.
+| Stage | Produces | Blocked |
+| --- | --- | --- |
+| `planning` | `docs/planning/**`, `BACKLOG.md`, ADRs, C4, sequences | code, tests, build, dev commands |
+| `development` | code, tests, docstrings, generated docs, new ADRs | returning to planning |
 
 ## Git
 
-Track source, tests, docs, `AGENTS.md`, `.opencode/agent/*`, harness scripts and
-one lockfile. Ignore dependencies, build output, caches, secrets and live
-session state (`activities.json`, `progress/current.md`). The durable history
-(`progress/history.md`) is tracked. Full policy in `assets/GIT_TRACKING.md`.
+Track source, tests, `BACKLOG.md`, `.harness/state.json`, `docs/planning/**`,
+`docs/harness/**`, `AGENTS.md`, roles, plugin, harness scripts and one lockfile.
+Ignore dependencies, build output, generated docs, caches, secrets,
+`activities.json`, the schedule, claims, approvals and `progress/current.md`.
+Full policy in `assets/GIT_TRACKING.md`.
 
 ## Learn more
 
-- `SKILL.md` — full workflow, gate selection and anti-patterns.
-- `references/lessons.md` — the real lessons behind the design.
+- `SKILL.md` — methodology, gates, scheduling and anti-patterns.
+- `references/migrating-existing-harness.md` — upgrade an installed v1 harness
+  without losing history.
+- `references/lessons.md` — the design lessons behind it.
 - `references/stacks/` — command tables per stack.

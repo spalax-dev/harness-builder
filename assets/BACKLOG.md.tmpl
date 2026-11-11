@@ -1,0 +1,59 @@
+# Backlog
+
+> User stories live here. They are written by the user and are deliberately
+> coarse: a want, the value behind it and what is already known. Do not turn
+> this file into a specification.
+>
+> The orchestrator derives activities and tasks from a story **only after it is
+> selected**. Fifty stories do not produce eighty activities up front.
+
+## Status legend
+
+| Status               | Meaning                                                   |
+| -------------------- | --------------------------------------------------------- |
+| `pending`            | Not selected. No activities exist for it.                 |
+| `active`             | The only story being worked on. Activities are derived.   |
+| `awaiting-approval`  | Work is finished and waiting for the user's verdict.      |
+| `done`               | User-approved and closed.                                 |
+| `dropped`            | Deliberately discarded; keep it for context.              |
+
+Exactly one story may be `active` and one may be `awaiting-approval`.
+
+---
+
+## US-001 — {{FIRST_STORY_TITLE}}
+
+- status: pending
+- value: {{WHO_WANTS_WHAT_AND_WHY}}
+- acceptance:
+  - {{OBSERVABLE_OUTCOME}}
+  - {{SECOND_OUTCOME_IF_ALREADY_KNOWN}}
+- open questions:
+  - {{QUESTION_TO_RESOLVE_WHEN_THE_STORY_STARTS}}
+
+## US-002 — {{SECOND_STORY_TITLE}}
+
+- status: pending
+- value: {{VALUE}}
+- acceptance:
+  - {{OUTCOME}}
+- open questions:
+
+---
+
+## How to add a story
+
+1. Append a `## US-00N — Title` section at the end of the open list.
+2. Fill `status`, `value`, `acceptance` and `open questions`.
+3. Keep acceptance to what you can observe, not how to implement it.
+4. Do not write activities or tasks here; that is the orchestrator's job when
+   you pick the story.
+
+## Rules
+
+- The user owns this file. The orchestrator only changes `status` and only with
+  the user's agreement.
+- Sparse stories are valid. `open questions` is where ambiguity lives; resolve
+  it when the story starts, not before.
+- A story is `done` only after the user approves it. The harness records the
+  approval, not the agent.

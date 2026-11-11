@@ -1,0 +1,77 @@
+<!--
+  structure.md.tmpl → docs/planning/structure.md
+
+  Where the code will live. This is the contract the structure gate enforces.
+  Replace: {{SOURCE_DIR}}, {{TEST_LOCATION}}, {{GENERATED_DOCS}}, {{TREE}}.
+-->
+
+# Structure
+
+> The physical shape of the repository. A new top-level folder is an
+> architecture change, not a convenience.
+
+## 1. Tree
+
+```text
+{{TREE}}
+```
+
+- `{{SOURCE_DIR}}` — production source.
+- `{{TEST_LOCATION}}` — tests.
+- `docs/planning/` — foundation documents and diagrams (hand written).
+- `docs/harness/` — how the harness works (hand written).
+- `{{GENERATED_DOCS}}` — generated documentation (build output, never edited).
+- `scripts/` — harness and tooling.
+- `BACKLOG.md` — user stories.
+
+## 2. What lives where
+
+| Folder          | Holds                          | Does not hold       |
+| --------------- | ------------------------------ | ------------------- |
+| {{FEATURE_DIR}} | one feature, with its tests    | shared utilities    |
+| {{SHARED_DIR}}  | reusable, dependency-free code | I/O, feature state  |
+| {{CORE_DIR}}    | services and the I/O boundary  | UI code             |
+| {{MODELS_DIR}}  | pure types and schemas         | runtime behavior    |
+
+## 3. Naming
+
+| Element       | Convention      | Example            |
+| ------------- | --------------- | ------------------ |
+| File          | kebab-case      | `auth-service.ts`  |
+| Type/class    | PascalCase      | `AuthService`      |
+| Function      | camelCase       | `issueToken()`     |
+| Test          | colocated spec  | `auth-service.spec.ts` |
+
+## 4. Dependency direction
+
+```text
+feature → shared → core → models
+```
+
+- No cycles.
+- `shared` never imports a feature.
+- `models` imports nothing from I/O or UI.
+- Cross-package imports require an explicit export.
+
+## 5. Generated documentation
+
+- Path: `{{GENERATED_DOCS}}`.
+- Produced by: {{DOC_GENERATOR}}.
+- Never edited by hand; never committed unless the project explicitly tracks it.
+- The source of truth is the docblock in the code.
+
+## 6. Adding a file or folder
+
+1. Update this document and `architecture.md` (same activity).
+2. Add the test in the documented location.
+3. Implement in the documented home.
+4. Run the activity gate.
+
+If the file does not fit, the architecture is wrong, not the folder.
+
+## 7. Forbidden
+
+- Generated files inside source directories.
+- A second test tree next to the documented one.
+- A new top-level folder without a docs update.
+- Secrets or environment files in the tree.

@@ -1,6 +1,31 @@
 # Session History
 
-> Append-only log of completed sessions/activities.
-> Keep the durable summary here; `current.md` is local session state.
+> Append-only durable record. `current.md` is live; this file is the memory.
+> One entry per closed story and per stage transition.
 
 ---
+
+## Template — story close
+
+```md
+## US-xxx — Title
+
+- Stage: development
+- Activities: ACT-01, ACT-02, ...
+- Batch: 1 (ACT-01, ACT-04 in parallel), 2 (ACT-02), ...
+- Documentation: ADR-0002, docs/planning/contracts.md, docstrings in src/...
+- Tests: <what they prove>
+- Gates: --activity per activity; --story green
+- Approved by: <name> at <timestamp>
+- Follow-ups: <new stories or open questions>
+```
+
+## Template — stage transition
+
+```md
+## PLANNING -> DEVELOPMENT
+
+- at: <timestamp>
+- approved by: <name>
+- planning is closed: it cannot be re-entered.
+```

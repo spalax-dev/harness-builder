@@ -1,6 +1,9 @@
 # STACK: generic .gitignore template.
-# Copy to .gitignore and add project-local paths. Keep progress/history.md
-# tracked; keep live session state and secrets out.
+# Copy to .gitignore and add project-local paths.
+#
+# Tracked: BACKLOG.md, .harness/state.json, docs/planning/**, progress/history.md.
+# Local: activities.json, the computed schedule, claims, approvals,
+# progress/current.md, generated docs and secrets.
 
 # Dependencies
 node_modules/
@@ -39,11 +42,17 @@ venv/
 .pytest_cache/
 .ruff_cache/
 .tox/
-site/
 
 # Go / Rust
 *.test
 *.out
+
+# Generated documentation (build output; never hand-edited)
+docs/api/
+docs/site/
+site/
+_build/
+.docusaurus/
 
 # Logs and local noise
 *.log
@@ -51,9 +60,11 @@ site/
 .DS_Store
 Thumbs.db
 
-# Session state (local only)
+# Harness session state (local only)
 /activities.json
 /progress/current.md
+/.harness/*
+!/.harness/state.json
 
 # Secrets — never commit
 .env
@@ -65,6 +76,5 @@ credentials*.json
 service-account*.json
 
 # Project-local state (add your own)
-# .tuneles/
 # .data/
 # uploads/

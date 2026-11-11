@@ -1,0 +1,71 @@
+<!--
+  stack.md.tmpl → docs/planning/stack.md
+
+  Technologies and why. One ADR per real decision; this file is the map.
+  Replace: {{PROJECT_NAME}}, {{LANGUAGE}}, {{FRAMEWORK}}, {{DATABASE}},
+  {{PACKAGE_MANAGER}}, {{TEST_RUNNER}}, {{DOC_GENERATOR}}, {{HOSTING}}.
+-->
+
+# Stack
+
+> What {{PROJECT_NAME}} is built with, and why. Choosing the stack is part of
+> PLANNING; changing it afterwards is an ADR.
+
+## 1. Runtime and language
+
+- **Language:** {{LANGUAGE}} — {{WHY}}.
+- **Runtime:** {{RUNTIME_VERSION}} — pinned in {{VERSION_FILE}}.
+- **Style:** formatter {{FORMATTER}}, linter {{LINTER}}, zero warnings.
+
+## 2. Frameworks and libraries
+
+| Concern       | Choice          | Why                 | ADR |
+| ------------- | --------------- | ------------------- | --- |
+| Web/API       | {{FRAMEWORK}}   | {{WHY}}             | —   |
+| Persistence   | {{ORM}}         | {{WHY}}             | —   |
+| Validation    | {{VALIDATION}}  | {{WHY}}             | —   |
+
+Rule: a new runtime dependency needs a reason and a lockfile update. A new
+*foundational* dependency needs an ADR.
+
+## 3. Data
+
+- **Primary store:** {{DATABASE}} — {{WHY}}.
+- **Migrations:** {{MIGRATION_TOOL}}, forward-only.
+- **Cache/queue (if any):** {{CACHE}} — {{WHY}}.
+
+## 4. Tooling
+
+| Purpose             | Tool                  |
+| ------------------- | --------------------- |
+| Package manager     | {{PACKAGE_MANAGER}}   |
+| Tests               | {{TEST_RUNNER}}       |
+| Documentation       | {{DOC_GENERATOR}}     |
+| Build               | {{BUILD_TOOL}}        |
+| CI                  | {{CI}}                |
+
+The documentation generator is mandatory: it turns the in-code docblocks into
+the readable documentation site. Generated output is build output, not source.
+
+## 5. Environments
+
+| Environment | Purpose            | Data            |
+| ----------- | ------------------ | --------------- |
+| local       | development        | fixtures        |
+| staging     | pre-production     | anonymized      |
+| production  | users              | real            |
+
+## 6. Hosting and operations
+
+{{HOSTING}}
+
+- Configuration is environment-based; secrets never live in the repository.
+- Every service has a health signal and a documented rollback.
+
+## 7. Deliberate omissions
+
+- {{OMITTED_TECHNOLOGY}} — {{WHY_NOT}}.
+
+## 8. Pending decisions
+
+- {{OPEN_TECH_DECISION}} → ADR-{{NUMBER}} when resolved.

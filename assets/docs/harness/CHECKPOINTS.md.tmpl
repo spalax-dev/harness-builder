@@ -1,54 +1,66 @@
 <!--
   CHECKPOINTS.md.tmpl → docs/harness/CHECKPOINTS.md
 
-  Replace: {{HARNESS_CMD}}, {{TEST_CMD}}, {{SOURCE_DIR}}, {{DOCS_DIR}}.
+  Replace: {{HARNESS_CMD}}, {{TEST_CMD}}, {{SOURCE_DIR}}, {{DOCS_DIR}},
+  {{DOCSGEN_CMD}}.
 -->
 
 # CHECKPOINTS — Final State Evaluation
 
-> The path is not evaluated, the destination is. These are objective
-> checkpoints a human or an agent can use to decide if the project is healthy.
+> Judge the destination, not the path. A human or an agent should be able to
+> decide whether the project is healthy from these boxes.
 
-## C1 — Harness is complete
+## C1 — Stage is coherent
 
-- [ ] `AGENTS.md`, `scripts/harness.mjs`, `scripts/harness-lib.mjs`,
-      `scripts/build_harness.mjs`, `activities.json`, `progress/current.md` exist.
-- [ ] `{{DOCS_DIR}}/harness/architecture.md`, `conventions.md`, `structure.md`,
-      `development.md`, `testing.md`, `verification.md` exist.
-- [ ] `{{HARNESS_CMD}}` exits with code 0.
-- [ ] `node --test scripts/harness-lib.spec.mjs` exits with code 0.
+- [ ] `.harness/state.json` has `planning` or `development`.
+- [ ] If `development`: `startedAt` and `approvedBy` are set.
+- [ ] No command was used to return to planning.
+- [ ] Planning artifacts exist and are not placeholders.
 
-## C2 — State is coherent
+## C2 — The work registry is honest
 
-- [ ] At most one activity is `in_progress` in `activities.json`.
-- [ ] Every `done` task ran its level (`--for-task`); every `done` full-level
-      activity ran the full harness once at close.
-- [ ] Every `done` activity has associated passing tests.
-- [ ] `progress/current.md` is empty or describes the active session.
+- [ ] `BACKLOG.md` parses; statuses are valid.
+- [ ] At most one story is `active` and one is `awaiting-approval`.
+- [ ] Every activity has a `storyId` that exists in the backlog.
+- [ ] `dependsOn` has no cycles and no cross-story edges.
+- [ ] Every activity has `touches` and at least one task.
+- [ ] No activity exists for a story that was never selected.
 
-## C3 — Code respects architecture
+## C3 — Execution respected the protocol
 
-- [ ] `{{SOURCE_DIR}}` only contains modules described in
-      `{{DOCS_DIR}}/harness/architecture.md` and `structure.md`.
-- [ ] No new dependency outside the manifest without review.
-- [ ] No stray debug output, no TODOs without context.
+- [ ] Every activity was claimed before editing.
+- [ ] A batch of N ran with N executors.
+- [ ] No file outside the batch's `touches` changed (the plugin enforces the individual activity's scope at edit time).
+- [ ] Activity verification ran after the executor returned, not concurrently.
+- [ ] State files were written only by the orchestrator, between batches.
 
-## C4 — Verification is real
+## C4 — Documentation is real
 
-- [ ] The source tree has tests covering the public behavior.
-- [ ] Type checks pass for every configured package.
-- [ ] Tests mock external boundaries only; no real network calls.
-- [ ] `{{TEST_CMD}}` shows > 0 tests and all green.
+- [ ] Every exported symbol has a docstring.
+- [ ] The documentation generator runs: `{{DOCSGEN_CMD}}`.
+- [ ] Generated output is not edited or committed.
+- [ ] Every decision taken has an ADR, indexed and numbered.
+- [ ] `docs/planning/architecture.md` and the C4/sequence diagrams match reality.
+- [ ] `docs/planning/contracts.md` matches the contract tests.
+
+## C5 — Verification is honest
+
+- [ ] `{{HARNESS_CMD}} --fast` is green.
+- [ ] The story gate was run once for evidence and once after approval.
+- [ ] `{{TEST_CMD}}` ran the tests it claims to run.
 - [ ] The production build succeeds.
+- [ ] No gate was skipped silently; skipped gates printed `[SKIP]`.
+- [ ] `node --test scripts/harness-lib.spec.mjs` is green.
 
-## C5 — Session closed properly
+## C6 — Closure is real
 
-- [ ] No suspicious untracked files (`*.tmp`, build artifacts outside ignores).
-- [ ] `progress/history.md` has an entry for the last session.
-- [ ] The last worked activity reflects its correct state.
-- [ ] No secrets, credentials or generated output are tracked.
+- [ ] The story is `done` only with a recorded user approval.
+- [ ] `progress/history.md` has the story entry with the approval.
+- [ ] `activities.json` is cleared or holds the next story's plan.
+- [ ] No secrets, credentials, generated output or session state are tracked.
+- [ ] No suspicious untracked files.
 
 ---
 
-**How to use this file:** the reviewer goes through each checkbox, marks `[x]`
-or `[ ]`, and rejects session close if any C1–C5 box remains empty.
+**How to use this file:** go through C1–C6. Any empty box blocks closure. An
+agent may prepare the evidence; only the user checks the approval boxes.

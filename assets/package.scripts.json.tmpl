@@ -1,12 +1,14 @@
 {
-  "_comment": "Merge these scripts into package.json. Do not add harness:ci (a CI alias that skips tests is misleading) and do not add --no-cache until a cache exists. If you add scripts/harness-cli.spec.mjs for CLI/flag integration tests, include it in test:harness.",
+  "_comment": "Merge these scripts into package.json. `harness` is stage-aware. Do not add a CI alias that skips tests; do not add --no-cache until a cache exists.",
   "scripts": {
     "harness": "node scripts/harness.mjs",
-    "harness:task": "node scripts/harness.mjs --for-task",
-    "harness:explain": "node scripts/harness.mjs --explain --for-task",
+    "harness:stage": "node scripts/harness.mjs --stage",
+    "harness:planning": "node scripts/harness.mjs --planning",
+    "harness:start-dev": "node scripts/harness.mjs --start-dev",
+    "harness:schedule": "node scripts/harness.mjs --schedule",
     "harness:fast": "node scripts/harness.mjs --fast",
     "harness:changed": "node scripts/harness.mjs --changed",
-    "harness:build": "node scripts/harness.mjs --dev-build --skip-tests",
+    "harness:explain": "node scripts/harness.mjs --explain",
     "build:harness": "node scripts/build_harness.mjs",
     "test:harness": "node --test scripts/harness-lib.spec.mjs"
   }

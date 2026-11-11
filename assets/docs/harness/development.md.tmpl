@@ -1,101 +1,149 @@
 <!--
   development.md.tmpl → docs/harness/development.md
 
-  Replace: {{HARNESS_CMD}}, {{TASK_LEVEL_CMD}}, {{TEST_CMD}}, {{BUILD_CMD}}.
+  Replace: {{HARNESS_CMD}}, {{TEST_CMD}}, {{BUILD_CMD}}, {{DOCSGEN_CMD}}.
 -->
 
 # Development Workflow
 
-> How work is built: docs → test → implement.
+> Two exclusive stages, one direction: PLANNING → DEVELOPMENT.
+> Inside development, work moves story by story.
 
 ---
 
-## The pipeline
+## 1. PLANNING
 
-Every change follows this order. No exceptions.
+**Purpose:** decide the foundation. No implementation.
 
-```text
-1. DOCUMENT   → what does it do? API shape? edge cases?
-2. TEST       → write tests that fail (red)
-3. IMPLEMENT  → write code that passes (green)
-4. REFACTOR   → clean up; tests stay green
-5. VERIFY     → run the task level, not the maximum level
+Produce:
+
+1. `docs/planning/overview.md` — product, users, goals, non-goals.
+2. `docs/planning/architecture.md` — context, containers, layers.
+3. `docs/planning/stack.md` + ADRs — technologies and why.
+4. `docs/planning/structure.md` — where code will live.
+5. `docs/planning/contracts.md` — contracts between applications.
+6. `docs/planning/c4/*.puml` — context, container, component.
+7. `docs/planning/sequences/*.puml` — the flows that matter.
+8. `BACKLOG.md` — coarse user stories in the user's words.
+
+Rules:
+
+- No source edits, no tests, no build. The plugin blocks them.
+- Do not pre-decompose the backlog. Activities appear only for the story the
+  user selects.
+- Ask for decisions; do not invent the product.
+- A story may be vague. Ambiguity belongs in `open questions`.
+
+Done when `{{HARNESS_CMD}} --planning` is green **and** the user approves:
+
+```bash
+{{HARNESS_CMD}} --start-dev --user-approved --by <name>
 ```
 
-### 1. Document first
-
-Before writing code, update the relevant docs:
-
-- **Architecture** — new module, layer or folder.
-- **Structure** — new file/folder home.
-- **Conventions** — new pattern or rule relaxation.
-- **Verification** — new gate or level change.
-
-Documentation must describe behavior, API shape and edge cases. A doc that only
-restates the code is not documentation.
-
-### 2. Test second
-
-Write tests that validate the documentation:
-
-- Exact output for known inputs.
-- Happy path, error paths and edge cases.
-- The test must fail before the implementation exists.
-- If the feature has no test, it is not implemented yet.
-
-See `docs/harness/testing.md`.
-
-### 3. Implement third
-
-Write the minimal code to make the tests pass:
-
-- Follow `docs/harness/conventions.md`.
-- Follow `docs/harness/structure.md`.
-- Do not add behavior the docs do not describe.
-- Do not skip tests to ship faster.
-
-### 4. Verify
-
-- Iteration: `{{HARNESS_CMD}} --fast`.
-- Task done: `{{TASK_LEVEL_CMD}} <activity>.<task>`.
-- Activity close: `{{HARNESS_CMD}}` (full), then the reviewer if full.
+This is one-way. There is no `--plan`.
 
 ---
 
-## Why this order
+## 2. DEVELOPMENT
 
-| Benefit              | Explanation                                        |
-| -------------------- | -------------------------------------------------- |
-| Design clarity       | Forces the API to be thought through before coding |
-| Living documentation | Docs are written while context is fresh            |
-| Regression safety    | Tests exist from day one                           |
-| Smaller diffs        | Each step is focused                               |
+### 2.1 Select the story
+
+1. The user picks a story.
+2. Set exactly one `- status: active` in `BACKLOG.md`.
+3. Resolve `open questions` with the user before decomposing.
+4. Derive activities for **that story only**.
+
+### 2.2 Decompose into activities
+
+An activity is a cohesive set of interrelated tasks, usually one technical
+layer. Example for *"As a user I want to log in"*:
+
+| Activity | Tasks                                                        |
+| -------- | ------------------------------------------------------------ |
+| data model | entity docstrings, table, migration, repository interface   |
+| contract | OpenAPI shape, controller signatures, error catalog         |
+| tests    | happy path, invalid credentials, locked account, expiry      |
+| implementation | service logic, token issuance, middleware, wiring       |
+| integration | migration run, docs generation, smoke                     |
+
+Rules:
+
+- `storyId` links the activity to its story.
+- `dependsOn` is the real order; `[]` means independent.
+- `touches` is mandatory: every path prefix the activity may write.
+- Every activity's first task is its documentation task.
+- The tests activity precedes the implementation activity.
+
+Show the plan to the user and wait for the OK.
+
+### 2.3 Schedule
+
+```bash
+{{HARNESS_CMD}} --schedule
+```
+
+The harness builds batches from `dependsOn` and `touches`:
+
+- a batch = independent activities with disjoint `touches`;
+- batches are sequential;
+- a batch of N runs with N executors **in one message**.
+
+### 2.4 Execute an activity
+
+Each executor, inside its `touches`:
+
+```text
+1. DOCUMENT   decision -> ADR + planning doc/diagram
+              public surface -> docstrings in the code
+2. TEST       tests for this activity; confirm RED
+3. IMPLEMENT  minimal code; confirm GREEN
+4. VERIFY     {{HARNESS_CMD}} --activity ACT-xx
+```
+
+The documentation step is not "write a markdown feature doc". It is:
+
+- the decision record, when the activity decides something;
+- the docstrings, always;
+- the planning documents and diagrams, when the decision changes them.
+
+### 2.5 Close the story
+
+1. Every activity `done`.
+2. Story `- status: awaiting-approval`.
+3. `{{HARNESS_CMD}} --story US-xxx`.
+4. Exit `3` → present evidence → ask the user.
+5. `--approve-story US-xxx --by <name>` → `--story` again.
+6. Mark `done`, archive to `progress/history.md`, clear `activities.json`.
 
 ---
 
-## Exceptions
+## 3. Why this order
 
-- **Bug fixes** may start with a failing regression test, then document the fix,
-  then implement.
-- **Refactors** with no behavior change may already have tests and docs; update
-  only what became stale.
-- **Research spikes** live in `progress/explore/` or a temporary script; no
-  doc/test requirement until the spike becomes a feature.
-
----
-
-## Environment
-
-- Use the project's package manager and lockfile; one manager per repo.
-- Commands are project-owned scripts where possible.
-- Do not commit dependencies, build output or secrets.
+| Choice                        | Reason                                                     |
+| ----------------------------- | ---------------------------------------------------------- |
+| Foundation before code        | It is cheaper to change a diagram than a schema            |
+| Stories before activities     | The user's want is stable; the technical plan is not       |
+| Activities derived just-in-time | 50 stories do not need 80 activities on day one          |
+| Documentation first in an activity | Decisions and docstrings are cheapest before the code |
+| Tests before implementation   | The test defines "done" for that activity                  |
+| Parallel independent layers   | Data model and UI shell do not need each other             |
+| User approves the story       | A human verdict beats an agent reviewing itself            |
 
 ---
 
-## Declaring done
+## 4. Exceptions
 
-1. The task level is green (`{{TASK_LEVEL_CMD}} <ref>`).
-2. At activity close, the activity level is green (`{{HARNESS_CMD}}` for full).
-3. The reviewer passes the activity when the level is full.
-4. The task/activity is marked `done` in `activities.json`.
-5. The summary moves to `progress/history.md`.
+- **Bug fixes** may start with the failing regression test, then document the
+  cause, then fix.
+- **Refactors** may already have docs and tests; update only what went stale.
+- **Spikes** live in `progress/explore/`; they become a story only when they
+  produce a decision.
+
+---
+
+## 5. Declaring done
+
+- The activity is green with `--activity` and stayed inside `touches`.
+- The story is green with `--story` and approved by the user.
+- The docs and ADRs describe the current behavior.
+- `progress/current.md` tells the next agent where things stand.

@@ -1,0 +1,57 @@
+# NNNN — Adopt the two-stage harness
+
+- **Status:** accepted
+- **Date:** {{YYYY-MM-DD}}
+- **Activity:** harness migration (pre-development)
+- **Deciders:** {{NAMES}}
+
+## Context
+
+The repository used a single-stage harness: typed tasks, task-scoped
+verification levels, an agent reviewer, and no written foundation. That model had
+three costs:
+
+- review was a full agent run that still did not carry the user's judgment;
+- TDD was applied to requirements that were not understood yet;
+- independent activities were executed serially, and the documentation lived
+  outside the code.
+
+The codebase already exists; the foundation has to be reconstructed.
+
+## Decision
+
+Adopt the two-stage harness:
+
+1. **PLANNING** produces `docs/planning/**`, the C4/sequence diagrams, the ADRs
+   and a coarse `BACKLOG.md`. No code, no tests.
+2. **DEVELOPMENT** derives activities from the selected story only, schedules
+   them in parallel batches by `dependsOn` + `touches`, documents first
+   (ADR + docstrings), applies TDD inside the story, and closes only with recorded
+   user approval.
+3. A documentation generator is mandatory; generated output is build output.
+4. The `harness-guard` plugin enforces the planning lock, batch claims and write
+   scope.
+
+## Alternatives considered
+
+| Alternative | Why not |
+| --- | --- |
+| Keep v1 and add planning docs | The old levels and reviewer survive; two workflows compete |
+| Adopt the model only for new modules | The inconsistency becomes permanent |
+| Pre-decompose the whole backlog during migration | Repeats the failure mode the model exists to prevent |
+
+## Consequences
+
+- **Positive:** user-owned decisions, less review time, real parallelism,
+  documentation that follows the code.
+- **Cost:** the foundation must be reconstructed and approved before any new
+  work; legacy docstring/lint debt needs a visible baseline and a story.
+- **Follow-up:** burn down the docblock baseline; retire old harness aliases
+  (`--for-task`, `harness:task`) from scripts and docs.
+
+## Migration notes
+
+- `progress/history.md` is preserved; old activities are archived, not imported.
+- Reconstructed planning documents are labelled with their reconstruction date.
+- In-flight work is finished under the old harness or re-planned as a story; it
+  is never converted automatically.

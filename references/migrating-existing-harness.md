@@ -32,7 +32,7 @@ grep -n -- "light\|medium\|full" docs/harness/verification.md 2>/dev/null
 | no `docs/planning/` | pre-foundation model |
 
 If the repo is already on the two-stage model, only run the acceptance checks in
-§9 and do not migrate a second time.
+section 9 and do not migrate a second time.
 
 ---
 
@@ -70,8 +70,8 @@ If the repo is already on the two-stage model, only run the acceptance checks in
 | `docs/harness/development.md`, `testing.md` | **Replace**; workflow and TDD scope changed |
 | `docs/harness/architecture.md` | **Split**: product architecture → `docs/planning/architecture.md`; harness architecture stays |
 | `docs/harness/structure.md`, `conventions.md`, `CHECKPOINTS.md` | **Merge** the project facts, replace the policy |
-| `docs/planning/**` | **Create** from the real system (see §4) |
-| `BACKLOG.md` | **Create** from open work, not from old activities (see §4) |
+| `docs/planning/**` | **Create** from the real system (see section 4) |
+| `BACKLOG.md` | **Create** from open work, not from old activities (see section 4) |
 | `docs/harness/git-tracking.md`, `.gitignore` | **Update** to the new policy |
 | `package.json` scripts | **Merge** the new harness scripts; drop `harness:task`, `--for-task` aliases |
 
@@ -100,7 +100,7 @@ node scripts/build_harness.mjs "<project>" "<description>"
 missing**. It never overwrites an existing file, so run it after the backup and
 inspect what it reports.
 
-Then fill `CONFIG` from the detected stack (see `SKILL.md` §10). Do not leave
+Then fill `CONFIG` from the detected stack (see `SKILL.md` section 10). Do not leave
 the example npm commands if the project is not npm.
 
 Run the pure logic tests before going further:
@@ -210,7 +210,7 @@ baseline + visible debt + a story. Never a silent `--skip`.
 The new state starts in `planning` even though code exists. That is deliberate:
 the foundation must be written before the harness lets you build.
 
-1. Complete §§3–6 while still in planning. Those paths are allowed.
+1. Complete sections 3–6 while still in planning. Those paths are allowed.
 2. Run `{{HARNESS_CMD}} --planning` until green.
 3. Show the user the reconstructed foundation and the migration ADR.
 4. Only with an explicit yes:
